@@ -85,6 +85,17 @@ DTEK_VALUES = {"yes": ("1", "1"), "no": ("0", "0"), "first": ("0", "1"), "second
                "maybe": ("2", "2"), "mfirst": ("2", "1"), "msecond": ("1", "2")}
 
 
+def clean_text(s):
+    """Убирает лишние пробелы из HTML-текста: «енергії .» → «енергії.»."""
+    if not s:
+        return s
+    s = re.sub(r"[ \t\u00a0]+", " ", s)
+    s = re.sub(r" *\n *", "\n", s)
+    s = re.sub(r"\n{2,}", "\n", s)
+    s = re.sub(r" +([.,;:!?])", r"\1", s)
+    return s.strip() or None
+
+
 def parse_dtek_fact(fact):
     days = {}
     for ts, groups in (fact.get("data") or {}).items():
@@ -114,6 +125,9 @@ def parse_dtek_preset(preset):
                 day[i], day[i + 1] = a, b
             rows.append("".join(day))
         week[norm_queue(g)] = rows
+    # Когда недельный график не действует, ДТЭК отдаёт шаблон «свет есть всегда» — это не прогноз.
+    if all(set(r) == {"1"} for rows in week.values() for r in rows):
+        return {}
     return week
 
 
@@ -128,14 +142,14 @@ def dtek(site, mirror):
         mp = re.search(r"DisconSchedule\.preset\s*=\s*(\{.*?\})\s*(?:;|\n|</script>)", page, re.S)
         preset = json.loads(mp.group(1)) if mp else {}
         att = re.search(r'<div class="m-attention__text">(.*?)</div>', page, re.S)
-        attention = html.unescape(re.sub(r"<[^>]+>", " ", att.group(1))).strip() if att else None
+        attention = clean_text(html.unescape(re.sub(r"<[^>]+>", " ", att.group(1)))) if att else None
         src = f"https://www.{site}/ua/shutdowns"
     except Exception as e:
         log(f"  {site}: прямой запрос не удался ({e}), берём зеркало")
         d = json.loads(fetch(f"https://raw.githubusercontent.com/Baskerville42/outage-data-ua/main/data/{mirror}.json"))
         fact = d["fact"]
         preset = d.get("preset") or {}
-        attention = (d.get("attention") or {}).get("text")
+        attention = clean_text((d.get("attention") or {}).get("text"))
         src = f"https://www.{site}/ua/shutdowns"
     days = parse_dtek_fact(fact)
     return {"days": days, "week": parse_dtek_preset(preset), "attention": attention, "source": src, "updatedAtSource": fact.get("update")}
@@ -224,7 +238,7 @@ def telegram_gpv(channel, source_url):
                 days[date.isoformat()] = sched
         mode = detect_mode(text)
         if mode and (dt.datetime.now(KYIV) - local) < dt.timedelta(hours=12):
-            attention = text.strip()[:600]
+            attention = clean_text(text)[:600]
     return {"days": days, "attention": attention, "source": f"https://t.me/{channel}"}
 
 

@@ -5,3 +5,6 @@ local.properties
 .idea/
 collector/out/
 __pycache__/
+*.jks
+keystore.properties
+.kotlin/

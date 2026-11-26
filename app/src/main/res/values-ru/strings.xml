@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Светлячок</string>
+    <string name="widget_desc">Свет по вашему адресу</string>
 </resources>

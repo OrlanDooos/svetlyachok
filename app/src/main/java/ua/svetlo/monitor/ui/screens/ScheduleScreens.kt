@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -106,7 +107,11 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
     var queue by remember(s.selected.queue) { mutableStateOf(s.selected.queue) }
     val c = Svetlo.colors
     val w = LocalWindow.current
-    val days = (0 until 7).map { repo.schedule(queue, now.toLocalDate().plusDays(it.toLong()), s.scenario) }
+    val region = s.selected.region
+    val ver by repo.version.collectAsState()
+    val days = remember(ver, queue, region, now.toLocalDate()) { (0 until 7).map { repo.schedule(region, queue, now.toLocalDate().plusDays(it.toLong())) } }
+    val mode = remember(ver, region) { repo.summary(region)?.mode }
+    val queueList = remember(ver, region) { repo.queues(region) }
     val today = days.first()
     val nowSlot = now.hour * 2 + now.minute / 30
 
@@ -119,7 +124,9 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
                         Text(if (i == 0) tr("Сьогодні", "Сегодня") else "${d.date.dayOfWeek.ruShort()} ${d.date.dayOfMonth}",
                             style = Type.caption.copy(fontWeight = if (i == 0) FontWeight.ExtraBold else FontWeight.SemiBold),
                             color = if (i == 0) c.ink else c.muted, modifier = Modifier.width(60.dp))
-                        Box(Modifier.weight(1f).graphicsLayer { alpha = if (d.forecast) 0.75f else 1f }) {
+                        if (!d.known) Box(Modifier.weight(1f).height(if (w.widthClass == ua.svetlo.monitor.ui.WidthClass.Compact) 20.dp else 26.dp).clip(RoundedCornerShape(3.dp)).background(c.divider), contentAlignment = Alignment.Center) {
+                            Text(tr("графіка ще немає", "графика ещё нет"), style = Type.caption, color = c.muted)
+                        } else Box(Modifier.weight(1f).graphicsLayer { alpha = if (d.forecast) 0.75f else 1f }) {
                             DayBar(d.slots, height = if (w.widthClass == ua.svetlo.monitor.ui.WidthClass.Compact) 20.dp else 26.dp, forecast = d.forecast, gap = 1.dp, radius = 3.dp,
                                 nowFraction = if (i == 0) (now.hour * 60 + now.minute) / 1440f else null)
                         }
@@ -128,7 +135,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
                     LegendItem(Status.Green, tr("Світло є", "Свет есть")); LegendItem(Status.Yellow, tr("Відключення", "Отключение")); LegendItem(Status.Maybe, tr("Можливо", "Возможно")); LegendItem(Status.Forecast, tr("Прогноз", "Прогноз"))
                 }
-                Text(tr("Прогноз будуємо за минулими тижнями. Точний графік обленерго публікує напередодні ввечері.", "Прогноз строим по прошлым неделям. Точный график облэнерго публикует накануне вечером."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
+                Text(tr("Прогноз — за тижневим графіком оператора, якщо він його публікує. Точний графік обленерго зазвичай викладає напередодні ввечері.", "Прогноз — по недельному графику оператора, если он его публикует. Точный график облэнерго обычно выкладывает накануне вечером."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
             }
         }
     }
@@ -136,7 +143,8 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
         Rise(80) {
             SCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 6.dp)) {
                 val windows = (today.windows(Slot.Off).map { it to false } + today.windows(Slot.Maybe).map { it to true }).sortedBy { it.first.first }
-                if (windows.isEmpty()) Text(tr("Сьогодні відключень немає", "Сегодня отключений нет"), style = Type.body, color = c.ink2, modifier = Modifier.padding(vertical = 12.dp))
+                if (!today.known) Text(tr("Графік на сьогодні ще не опубліковано", "График на сегодня ещё не опубликован"), style = Type.body, color = c.ink2, modifier = Modifier.padding(vertical = 12.dp))
+                else if (windows.isEmpty()) Text(tr("Сьогодні відключень немає", "Сегодня отключений нет"), style = Type.body, color = c.ink2, modifier = Modifier.padding(vertical = 12.dp))
                 windows.forEachIndexed { i, (r, maybe) ->
                     val start = now.toLocalDate().atStartOfDay().plusMinutes(r.first * 30L)
                     val end = now.toLocalDate().atStartOfDay().plusMinutes((r.last + 1) * 30L)
@@ -178,7 +186,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
             Pill("${s.selected.labelName} · ${s.selected.queue}", border = c.line, style = Type.smallBold.copy(fontSize = Type.body.fontSize * 0.93f))
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(repo.queues) { q ->
+            items(queueList) { q ->
                 val on = q == queue
                 Box(
                     Modifier.heightIn(min = 40.dp).widthIn(min = 52.dp).clip(RoundedCornerShape(12.dp))
@@ -187,7 +195,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
                 ) { Text(q, style = Type.bodyBold.copy(fontSize = Type.body.fontSize * 0.93f), color = if (on) c.onInverse else c.ink) }
             }
         }
-        if (s.scenario == ua.svetlo.monitor.data.Scenario.Emergency || s.scenario == ua.svetlo.monitor.data.Scenario.Blackout) {
+        if (mode == ua.svetlo.monitor.data.RegionMode.Emergency || mode == ua.svetlo.monitor.data.RegionMode.Blackout) {
             Pill(tr("Зараз графіки не діють: аварійні відключення", "Сейчас графики не действуют: аварийные отключения"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
         }
     }
@@ -203,23 +211,30 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
 
 @Composable
 fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val cityMap = remember(s.selected.region) { MapAssets.city(ctx, repo.queues, MapAssets.cityIdFor(s.selected.region)) }
-    val a = repo.area(s.scenario).let { it.copy(title = cityMap.district, city = cityMap.city) }
+    val ver by repo.version.collectAsState()
+    val a0 = remember(ver, s.selected) { repo.area(s.selected.region, s.selected.queue) }
     val c = Svetlo.colors
+    if (a0 == null) {
+        ScreenColumn {
+            BackHeader(s.selected.cityName, tr("Статистика району", "Статистика района"), onBack)
+            SCard(Modifier.fillMaxWidth()) { Text(tr("Для цієї області ще немає даних. Статистика з'явиться, щойно ми почнемо збирати графіки.", "Для этой области ещё нет данных. Статистика появится, как только мы начнём собирать графики."), style = Type.body, color = c.ink2) }
+        }
+        return
+    }
+    val a = a0
     var period by remember { mutableIntStateOf(0) }
     val w = LocalWindow.current
     val totals = Triple(a.days.sumOf { it.first }, a.days.sumOf { it.second }, a.days.sumOf { it.third })
     val all = (totals.first + totals.second + totals.third).coerceAtLeast(1)
 
     val head: @Composable () -> Unit = {
-        BackHeader(a.title, a.city, onBack) { SquareButton(Icons.Rounded.BookmarkBorder, tr("В обране", "В избранное"), {}, tint = c.accent) }
+        BackHeader(a.title, a.city, onBack)
         SCard(Modifier.fillMaxWidth()) {
             val soft = when (a.type) { OutageType.Emergency -> c.redSoft; OutageType.Blackout -> c.blackSoft; OutageType.None -> c.greenSoft; else -> c.yellowSoft }
             val ink = when (a.type) { OutageType.Emergency -> c.redInk; OutageType.Blackout -> c.ink; OutageType.None -> c.greenInk; else -> c.yellowInk }
             Pill(tr("Зараз: ${a.type.title.lowercase()}", "Сейчас: ${a.type.title.lowercase()}"), bg = soft, fg = ink, border = null, dot = a.type.color, blink = a.type == OutageType.Emergency)
             Text(formatDuration(a.avgMinutes.toLong()), style = Type.bigNumber, color = c.ink)
-            Text(tr("середній час без світла на день за 7 днів", "среднее время без света в день за 7 дней"), style = Type.body, color = c.ink2)
+            Text(tr("в середньому без світла на день за ${a.days.size} дн. (усі черги області)", "в среднем без света в день за ${a.days.size} дн. (все очереди области)"), style = Type.body, color = c.ink2)
         }
     }
     val chart: @Composable () -> Unit = {
@@ -242,7 +257,7 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                a.dayLabels.forEachIndexed { i, l -> Text(l, style = Type.caption, color = if (i == 6) c.ink else c.muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f)) }
+                a.dayLabels.forEachIndexed { i, l -> Text(l, style = Type.caption, color = if (i == a.dayLabels.lastIndex) c.ink else c.muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f)) }
             }
             if (period == 1) Text(tr("За 30 днів даних поки мало, показуємо останній тиждень.", "За 30 дней данных пока мало, показываем последнюю неделю."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
         }
@@ -255,7 +270,7 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
                 val anim = remember { Animatable(0f) }
                 LaunchedEffect(Unit) { anim.animateTo(share, tween(800, delayMillis = i * 100, easing = FastOutSlowInEasing)) }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row { Text(n, style = Type.bodyBold.copy(fontSize = Type.body.fontSize * 0.93f), color = c.ink, modifier = Modifier.weight(1f)); Text("${formatShort(m / 7)} · ${(share * 100).toInt()}%", style = Type.small, color = c.ink2) }
+                    Row { Text(n, style = Type.bodyBold.copy(fontSize = Type.body.fontSize * 0.93f), color = c.ink, modifier = Modifier.weight(1f)); Text("${formatShort(m / a.days.size.coerceAtLeast(1))} · ${(share * 100).toInt()}%", style = Type.small, color = c.ink2) }
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(c.divider)) { Box(Modifier.fillMaxWidth(anim.value).height(8.dp).clip(CircleShape).background(col)) }
                 }
             }
@@ -268,7 +283,7 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
     }
     val queues: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth()) {
-            SectionHeader(tr("Черги району", "Очереди района"), tr("зараз", "сейчас"))
+            SectionHeader(tr("Черги області", "Очереди области"), tr("зараз", "сейчас"))
             a.queueOff.entries.chunked(6).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.forEach { (q, off) ->
@@ -291,7 +306,7 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
 @Composable
 fun WindowsScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBack: () -> Unit) {
     val c = Svetlo.colors
-    val windows = repo.powerWindows(s.selected.queue, now.toLocalDate(), s.scenario).filter { it.end.isAfter(now) }
+    val windows = repo.powerWindows(s.selected.region, s.selected.queue, now.toLocalDate()).filter { it.end.isAfter(now) }
     val tasks = remember { mutableStateOf(setOf(1)) }
     ScreenColumn {
         BackHeader(tr("Вікна світла", "Окна света"), tr("${s.selected.labelName} · черга ${s.selected.queue}", "${s.selected.labelName} · очередь ${s.selected.queue}"), onBack)

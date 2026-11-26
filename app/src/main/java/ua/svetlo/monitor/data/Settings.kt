@@ -16,7 +16,6 @@ data class Settings(
     val theme: ThemeMode = ThemeMode.System,
     val largeText: Boolean = false,
     val lang: Lang = Lang.Uk,
-    val scenario: Scenario = Scenario.Normal,
     val remindMinutes: Int = 15,
     val notifyChanges: Boolean = true,
     val notifyPowerBack: Boolean = true,
@@ -28,11 +27,11 @@ data class Settings(
     val selected: Address get() = addresses.firstOrNull { it.id == selectedId } ?: addresses.first()
 }
 
-val DefaultAddresses = listOf(
-    Address("home", "Дім", MapAssets.HOME_ADDRESS, "Київ", "kyiv-city", "3.1"),
-    Address("mom", "Мама", "Соборний проспект, 151", "Запоріжжя", "zaporizhia", "4.2"),
-    Address("dacha", "Дача", "вулиця Київська, 5", "Бровари", "kyiv", "4.1"),
-)
+/** До онбординга — одна пустая адреса. Её заменяет выбор на втором шаге онбординга. */
+val DefaultAddresses = listOf(Address("home", "Дім", "", "Київ", "kyiv-city", "1.1"))
+
+/** Версия схемы настроек. 3 — первая рабочая версия: тестовые адреса из 0.1/0.2 сбрасываем. */
+private const val SCHEMA = 3
 
 /** Адреса из сборки 0.1 сохранялись по-русски — переводим их в украинский вид. */
 private val LegacyUk = mapOf("Дом" to "Дім", "Киев" to "Київ", "Львов" to "Львів", "Бровары" to "Бровари")
@@ -45,7 +44,6 @@ class SettingsStore(private val ctx: Context) {
         val theme = stringPreferencesKey("theme")
         val large = booleanPreferencesKey("large")
         val lang = stringPreferencesKey("lang")
-        val scenario = stringPreferencesKey("scenario")
         val remind = intPreferencesKey("remind")
         val nChanges = booleanPreferencesKey("n_changes")
         val nBack = booleanPreferencesKey("n_back")
@@ -53,19 +51,27 @@ class SettingsStore(private val ctx: Context) {
         val quiet = booleanPreferencesKey("quiet")
         val addresses = stringPreferencesKey("addresses")
         val selected = stringPreferencesKey("selected")
+        val schema = intPreferencesKey("schema")
     }
 
     val flow: Flow<Settings> = ctx.store.data.map { p -> p.toSettings() }
 
     private fun Preferences.toSettings(): Settings {
         val d = Settings()
+        if ((this[K.schema] ?: 0) < SCHEMA) {
+            // Тестовые сборки: оставляем только тему, язык и шрифт, адреса выбираем заново.
+            return d.copy(
+                theme = this[K.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: d.theme,
+                largeText = this[K.large] ?: d.largeText,
+                lang = this[K.lang]?.let { runCatching { Lang.valueOf(it) }.getOrNull() } ?: d.lang,
+            )
+        }
         val addrs = this[K.addresses]?.let(::decode)?.takeIf { it.isNotEmpty() } ?: d.addresses
         return Settings(
             onboarded = this[K.onboarded] ?: d.onboarded,
             theme = this[K.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: d.theme,
             largeText = this[K.large] ?: d.largeText,
             lang = this[K.lang]?.let { runCatching { Lang.valueOf(it) }.getOrNull() } ?: d.lang,
-            scenario = this[K.scenario]?.let { runCatching { Scenario.valueOf(it) }.getOrNull() } ?: d.scenario,
             remindMinutes = this[K.remind] ?: d.remindMinutes,
             notifyChanges = this[K.nChanges] ?: d.notifyChanges,
             notifyPowerBack = this[K.nBack] ?: d.notifyPowerBack,
@@ -83,7 +89,6 @@ class SettingsStore(private val ctx: Context) {
             p[K.theme] = s.theme.name
             p[K.large] = s.largeText
             p[K.lang] = s.lang.name
-            p[K.scenario] = s.scenario.name
             p[K.remind] = s.remindMinutes
             p[K.nChanges] = s.notifyChanges
             p[K.nBack] = s.notifyPowerBack
@@ -91,6 +96,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.quiet] = s.quietNight
             p[K.addresses] = encode(s.addresses)
             p[K.selected] = s.selectedId
+            p[K.schema] = SCHEMA
         }
     }
 

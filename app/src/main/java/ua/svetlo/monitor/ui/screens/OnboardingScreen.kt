@@ -127,20 +127,20 @@ private fun PageWelcome(lang: Lang, onLang: (Lang) -> Unit) {
 }
 
 @Composable
-private fun PageAddress(repo: OutageRepository, picked: Address?, onPick: (Address) -> Unit) {
+private fun PageAddress(repo: OutageRepository, picked: Address?, onPick: (Address?) -> Unit) {
     val c = Svetlo.colors
     Text(tr("Де ви живете?", "Где вы живёте?"), style = Type.display, color = c.ink)
-    Text(tr("За адресою ми самі знайдемо вашу чергу відключень. Номер черги знати не потрібно.", "По адресу мы сами найдём вашу очередь отключений. Номер очереди знать не нужно."), style = Type.body, color = c.ink2)
+    Text(tr("Оберіть область і свою чергу. Якщо не знаєте черги, відкрийте пошук за адресою на сайті обленерго.", "Выберите область и свою очередь. Если не знаете очередь, откройте поиск по адресу на сайте облэнерго."), style = Type.body, color = c.ink2)
     if (picked != null) {
         val pop = remember(picked) { Animatable(0.9f) }
         LaunchedEffect(picked) { pop.animateTo(1f, spring(dampingRatio = 0.45f)) }
         SCard(Modifier.fillMaxWidth().graphicsLayer { scaleX = pop.value; scaleY = pop.value }, color = c.greenSoft) {
-            Text(tr("Знайшли вашу чергу", "Нашли вашу очередь"), style = Type.smallBold, color = c.greenInk)
-            Text(picked.street, style = Type.h2, color = c.ink)
+            Text(tr("Готово", "Готово"), style = Type.smallBold, color = c.greenInk)
+            Text(picked.street.ifBlank { picked.labelName }, style = Type.h2, color = c.ink)
             Text(tr("${picked.cityName} · черга ${picked.queue}", "${picked.cityName} · очередь ${picked.queue}"), style = Type.body, color = c.ink2)
+            Text(tr("Змінити", "Изменить"), style = Type.bodyBold, color = c.accent, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onPick(null) }.padding(vertical = 6.dp))
         }
-    }
-    AddressPicker(repo, onPick)
+    } else AddressEditor(repo, null, compact = true, onDone = { onPick(it) })
 }
 
 @Composable

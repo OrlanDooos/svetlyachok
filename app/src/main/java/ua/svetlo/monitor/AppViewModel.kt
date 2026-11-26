@@ -10,15 +10,28 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import ua.svetlo.monitor.data.MockRepository
+import kotlinx.coroutines.flow.first
+import ua.svetlo.monitor.data.DataSource
+import ua.svetlo.monitor.data.LiveRepository
+import ua.svetlo.monitor.data.ScheduleStore
+import ua.svetlo.monitor.notify.Notifications
+import ua.svetlo.monitor.notify.Reminders
+import ua.svetlo.monitor.notify.RefreshWorker
 import ua.svetlo.monitor.data.OutageRepository
 import ua.svetlo.monitor.data.Settings
 import ua.svetlo.monitor.data.SettingsStore
 import java.time.LocalDateTime
 
 class SvetloApp : Application() {
-    val repository: OutageRepository by lazy { MockRepository() }
+    val schedules: ScheduleStore by lazy { ScheduleStore(this) }
+    val repository: OutageRepository by lazy { LiveRepository(schedules) }
     val settings: SettingsStore by lazy { SettingsStore(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        Notifications.createChannels(this)
+        RefreshWorker.schedule(this)
+    }
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -35,13 +48,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             while (true) {
-                _now.value = LocalDateTime.now()
+                _now.value = LocalDateTime.now(DataSource.Kyiv)
                 delay(15_000)
+            }
+        }
+        // Пока приложение открыто, обновляем графики раз в 5 минут.
+        viewModelScope.launch {
+            while (true) {
+                refresh()
+                delay(5 * 60_000)
             }
         }
     }
 
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    fun refresh() {
+        if (_refreshing.value) return
+        viewModelScope.launch {
+            _refreshing.value = true
+            val s = store.flow.first()
+            svetlo.schedules.refresh(s.addresses.map { it.region }.toSet())
+            Reminders.reschedule(getApplication(), repo, s)
+            _now.value = LocalDateTime.now(DataSource.Kyiv)
+            _refreshing.value = false
+        }
+    }
+
     fun update(f: (Settings) -> Settings) {
-        viewModelScope.launch { store.update(f) }
+        viewModelScope.launch {
+            val before = store.flow.first()
+            store.update(f)
+            val after = store.flow.first()
+            // Новая область — сразу скачиваем её график; изменились адреса или напоминания — перепланируем.
+            if (after.addresses.map { it.region }.toSet() != before.addresses.map { it.region }.toSet()) refresh()
+            else if (after.addresses != before.addresses || after.remindMinutes != before.remindMinutes || after.notifyPowerBack != before.notifyPowerBack || after.quietNight != before.quietNight)
+                Reminders.reschedule(getApplication(), repo, after)
+        }
     }
 }

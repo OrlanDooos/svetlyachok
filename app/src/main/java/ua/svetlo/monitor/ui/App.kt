@@ -71,14 +71,12 @@ import java.time.LocalDateTime
 import ua.svetlo.monitor.ui.screens.AddressesScreen
 import ua.svetlo.monitor.ui.screens.AreaScreen
 import ua.svetlo.monitor.ui.screens.CityMapScreen
-import ua.svetlo.monitor.ui.screens.GridScreen
+import ua.svetlo.monitor.ui.screens.SourcesScreen
 import ua.svetlo.monitor.ui.screens.HomeScreen
 import ua.svetlo.monitor.ui.screens.MapUkraineScreen
 import ua.svetlo.monitor.ui.screens.MoreScreen
 import ua.svetlo.monitor.ui.screens.NotifScreen
 import ua.svetlo.monitor.ui.screens.OnboardingScreen
-import ua.svetlo.monitor.ui.screens.PremiumScreen
-import ua.svetlo.monitor.ui.screens.ReportScreen
 import ua.svetlo.monitor.ui.screens.ScheduleScreen
 import ua.svetlo.monitor.ui.screens.WidgetsScreen
 import ua.svetlo.monitor.ui.screens.WindowsScreen
@@ -97,10 +95,8 @@ object Routes {
     const val Area = "area"
     const val Addresses = "addresses"
     const val Notif = "notif"
-    const val Grid = "grid"
+    const val Sources = "sources"
     const val Windows = "windows"
-    const val Report = "report"
-    const val Premium = "premium"
     const val Widgets = "widgets"
 }
 
@@ -110,7 +106,7 @@ private val Tabs: List<Tab> get() = listOf(
     Tab(Routes.Home, tr("Головна", "Главная"), Icons.Rounded.Home, setOf(Routes.Home)),
     Tab(Routes.Map, tr("Мапа", "Карта"), Icons.Rounded.Map, setOf(Routes.Map, Routes.City, Routes.Area)),
     Tab(Routes.Schedule, tr("Графік", "График"), Icons.Rounded.CalendarMonth, setOf(Routes.Schedule, Routes.Windows)),
-    Tab(Routes.More, tr("Ще", "Ещё"), Icons.Rounded.Tune, setOf(Routes.More, Routes.Addresses, Routes.Notif, Routes.Grid, Routes.Report, Routes.Premium, Routes.Widgets)),
+    Tab(Routes.More, tr("Ще", "Ещё"), Icons.Rounded.Tune, setOf(Routes.More, Routes.Addresses, Routes.Notif, Routes.Sources, Routes.Widgets)),
 )
 
 /** Нижняя панель занимает примерно столько места, контент оставляет под неё отступ. */
@@ -121,7 +117,7 @@ fun SvetloRoot(vm: AppViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val s = settings ?: return
-    SvetloContent(vm.repo, s, now, vm::update)
+    SvetloContent(vm.repo, s, now, vm::update, onRefresh = vm::refresh)
 }
 
 /** Всё приложение без ViewModel: так его можно отрисовать в тестах со скриншотами. */
@@ -132,6 +128,7 @@ fun SvetloContent(
     now: LocalDateTime,
     update: ((Settings) -> Settings) -> Unit,
     startRoute: String? = null,
+    onRefresh: () -> Unit = {},
 ) {
     I18n.lang = s.lang
     // При смене языка пересоздаём интерфейс, чтобы все строки перечитались, и остаёмся в «Ещё».
@@ -141,25 +138,25 @@ fun SvetloContent(
     SvetloTheme(mode = s.theme, largeText = s.largeText) {
         BoxWithConstraints(Modifier.fillMaxSize().background(Svetlo.colors.bg)) {
             CompositionLocalProvider(LocalWindow provides WindowLayout(maxWidth, maxHeight)) {
-                key(s.lang) { AppShell(repo, s, now, update, langStart ?: startRoute) }
+                key(s.lang) { AppShell(repo, s, now, update, langStart ?: startRoute, onRefresh) }
             }
         }
     }
 }
 
 @Composable
-private fun AppShell(repo: OutageRepository, s: Settings, now: LocalDateTime, update: ((Settings) -> Settings) -> Unit, startRoute: String?) {
+private fun AppShell(repo: OutageRepository, s: Settings, now: LocalDateTime, update: ((Settings) -> Settings) -> Unit, startRoute: String?, onRefresh: () -> Unit) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val w = LocalWindow.current
-    val showNav = route != null && route != Routes.Onboarding && route != Routes.Premium
+    val showNav = route != null && route != Routes.Onboarding
     val start = startRoute ?: if (s.onboarded) Routes.Home else Routes.Onboarding
 
     Row(Modifier.fillMaxSize()) {
         if (showNav && w.useRail) NavRail(route, nav)
         Box(Modifier.weight(1f).fillMaxHeight()) {
-            AppNavHost(repo, s, now, update, nav, start)
+            AppNavHost(repo, s, now, update, nav, start, onRefresh)
             if (showNav && !w.useRail) {
                 BottomBar(route, nav, Modifier.align(Alignment.BottomCenter))
             }
@@ -238,7 +235,7 @@ private fun NavItem(t: Tab, selected: Boolean, modifier: Modifier = Modifier, on
 }
 
 @Composable
-private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, update: ((Settings) -> Settings) -> Unit, nav: NavHostController, start: String) {
+private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, update: ((Settings) -> Settings) -> Unit, nav: NavHostController, start: String, onRefresh: () -> Unit) {
     val enter = { _: AnimatedContentTransitionScope<*> -> fadeIn(tween(260)) + scaleIn(tween(260, easing = FastOutSlowInEasing), initialScale = 0.98f) }
     NavHost(
         nav, startDestination = start,
@@ -248,7 +245,7 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
     ) {
         composable(Routes.Onboarding) {
             OnboardingScreen(repo, s, onLang = { l -> update { it.copy(lang = l) } }, onDone = { addr ->
-                update { it.copy(onboarded = true, addresses = listOf(addr) + it.addresses.filter { a -> a.id != addr.id }, selectedId = addr.id) }
+                update { it.copy(onboarded = true, addresses = listOf(addr) + it.addresses.filter { a -> a.id != addr.id && a.id != "home" }, selectedId = addr.id) }
                 nav.navigate(Routes.Home) { popUpTo(Routes.Onboarding) { inclusive = true } }
             })
         }
@@ -257,21 +254,24 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
                 onAddresses = { nav.navigate(Routes.Addresses) },
                 onSchedule = { nav.goTab(Routes.Schedule) },
                 onArea = { nav.navigate(Routes.Area) },
-                onReport = { nav.navigate(Routes.Report) },
+                onSources = { nav.navigate(Routes.Sources) },
+                onRefresh = onRefresh,
                 onNotif = { nav.navigate(Routes.Notif) },
                 onSelect = { id -> update { it.copy(selectedId = id) } },
             )
         }
         composable(Routes.Map) { MapUkraineScreen(repo, s, onCity = { id -> nav.navigate(Routes.city(id = id)) }) }
         composable(Routes.City) { e ->
-            CityMapScreen(repo, s, now, initialQueue = e.arguments?.getString("queue"), cityId = e.arguments?.getString("id"),
+            CityMapScreen(repo, s, now, cityId = e.arguments?.getString("id"),
                 onBack = { nav.popBackStack() }, onArea = { nav.navigate(Routes.Area) },
-                onMyHome = { street, queue, city ->
+                onMyHome = { street, city ->
+                    // Очередь дома по карте пока не знаем — сохраняем адрес и просим проверить очередь.
                     update { st ->
-                        val home = st.addresses.first().copy(street = street, city = city.cityUk, region = city.region, queue = queue)
-                        st.copy(addresses = listOf(home) + st.addresses.drop(1), selectedId = home.id)
+                        val cur = st.selected
+                        val home = cur.copy(street = street, city = city.cityUk, region = city.region, queue = if (cur.region == city.region) cur.queue else "1.1")
+                        st.copy(addresses = st.addresses.map { if (it.id == cur.id) home else it })
                     }
-                    nav.goTab(Routes.Home)
+                    nav.navigate(Routes.Addresses)
                 })
         }
         composable(Routes.Area) { AreaScreen(repo, s, onBack = { nav.popBackStack() }) }
@@ -282,10 +282,8 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
         composable(Routes.More) { MoreScreen(s, nav = { nav.navigate(it) }, update = update) }
         composable(Routes.Addresses) { AddressesScreen(repo, s, now, onBack = { nav.popBackStack() }, update = update) }
         composable(Routes.Notif) { NotifScreen(s, onBack = { nav.popBackStack() }, update = update) }
-        composable(Routes.Grid) { GridScreen(repo, s, onBack = { nav.popBackStack() }) }
+        composable(Routes.Sources) { SourcesScreen(repo, onBack = { nav.popBackStack() }) }
         composable(Routes.Windows) { WindowsScreen(repo, s, now, onBack = { nav.popBackStack() }) }
-        composable(Routes.Report) { ReportScreen(repo, s, now, onBack = { nav.popBackStack() }) }
-        composable(Routes.Premium) { PremiumScreen(onClose = { nav.popBackStack() }) }
         composable(Routes.Widgets) { WidgetsScreen(repo, s, now, onBack = { nav.popBackStack() }) }
     }
 }

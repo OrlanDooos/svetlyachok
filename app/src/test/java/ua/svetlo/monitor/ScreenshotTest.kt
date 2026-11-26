@@ -11,8 +11,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import ua.svetlo.monitor.data.Lang
-import ua.svetlo.monitor.data.MockRepository
-import ua.svetlo.monitor.data.Scenario
+import ua.svetlo.monitor.data.Address
+import ua.svetlo.monitor.data.LiveRepository
+import ua.svetlo.monitor.data.ScheduleStore
 import ua.svetlo.monitor.data.Settings
 import ua.svetlo.monitor.ui.Routes
 import ua.svetlo.monitor.ui.SvetloContent
@@ -25,7 +26,7 @@ import java.time.LocalDateTime
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34])
+@Config(sdk = [34], application = android.app.Application::class)
 class ScreenshotTest(private val device: String, private val qualifiers: String) {
 
     companion object {
@@ -44,29 +45,46 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
 
     private val now = LocalDateTime.of(2026, 11, 26, 14, 36)
 
-    private fun shot(name: String, route: String, s: Settings = Settings(onboarded = true), fontScale: Float? = null) {
+    private val addrs = listOf(
+        Address("home", "Дім", "вулиця Лєскова, 9", "Київ", "kyiv-city", "3.1"),
+        Address("parents", "Батьки", "Соборний проспект, 151", "Запоріжжя", "zaporizhia", "4.2"),
+        Address("work", "Робота", "", "Дніпро", "dnipropetrovsk", "2.1"),
+    )
+    private val on = Settings(onboarded = true, addresses = addrs, selectedId = "home")
+
+    private val repo by lazy {
+        val dir = kotlin.io.path.createTempDirectory("svetlo").toFile()
+        val store = ScheduleStore(dir)
+        listOf("regions", "kyiv-city", "kyiv", "dnipropetrovsk", "odessa", "lviv", "zaporizhia").forEach { n ->
+            store.put("$n.json", javaClass.getResource("/fixtures/$n.json")!!.readText())
+        }
+        LiveRepository(store)
+    }
+
+    private fun shot(name: String, route: String, s: Settings = on, fontScale: Float? = null) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         if (fontScale != null) RuntimeEnvironment.setFontScale(fontScale)
-        compose.setContent { SvetloContent(MockRepository(), s, now, {}, route) }
+        compose.setContent { SvetloContent(repo, s, now, {}, route) }
         compose.mainClock.advanceTimeBy(1500)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/${device}_$name.png")
     }
 
     @Test fun home() = shot("home", Routes.Home)
-    @Test fun homeEmergencyDark() = shot("home_emergency_dark", Routes.Home, Settings(onboarded = true, scenario = Scenario.Emergency, theme = ThemeMode.Dark))
-    @Test fun homeLargeText() = shot("home_large", Routes.Home, Settings(onboarded = true, largeText = true))
+    @Test fun homeEmergencyDark() = shot("home_emergency_dark", Routes.Home, on.copy(selectedId = "work", theme = ThemeMode.Dark))
+    @Test fun homeZpDark() = shot("home_zp_dark", Routes.Home, on.copy(selectedId = "parents", theme = ThemeMode.Dark))
+    @Test fun homeLargeText() = shot("home_large", Routes.Home, on.copy(largeText = true))
     @Test fun homeSystemFont() = shot("home_font130", Routes.Home, fontScale = 1.3f)
     @Test fun map() = shot("map", Routes.Map)
     @Test fun city() = shot("city", Routes.city())
-    @Test fun cityQueue() = shot("city_queue", Routes.city("3.1"))
     @Test fun schedule() = shot("schedule", Routes.Schedule)
     @Test fun area() = shot("area", Routes.Area)
+    @Test fun windows() = shot("windows", Routes.Windows)
     @Test fun more() = shot("more", Routes.More)
+    @Test fun moreDark() = shot("more_dark", Routes.More, on.copy(theme = ThemeMode.Dark))
     @Test fun onboarding() = shot("onboarding", Routes.Onboarding, Settings())
-    @Test fun grid() = shot("grid", Routes.Grid)
     @Test fun addresses() = shot("addresses", Routes.Addresses)
-    @Test fun premium() = shot("premium", Routes.Premium)
-    @Test fun cityZaporizhzhia() = shot("city_zp", Routes.city(id = "zaporizhzhia"))
-    @Test fun homeRussian() = shot("home_ru", Routes.Home, Settings(onboarded = true, lang = Lang.Ru))
-    @Test fun moreRussian() = shot("more_ru", Routes.More, Settings(onboarded = true, lang = Lang.Ru))
+    @Test fun sources() = shot("sources", Routes.Sources)
+    @Test fun notif() = shot("notif", Routes.Notif)
+    @Test fun cityZaporizhzhia() = shot("city_zp", Routes.city(id = "zaporizhzhia"), on.copy(selectedId = "parents"))
+    @Test fun homeRussian() = shot("home_ru", Routes.Home, on.copy(lang = Lang.Ru))
 }

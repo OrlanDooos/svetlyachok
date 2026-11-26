@@ -20,22 +20,13 @@ enum class OutageType(private val titleUk: String, private val titleRu: String, 
 /** Состояние получасового слота графика. */
 enum class Slot { On, Off, Maybe }
 
-/** Сценарий тестовых данных. В рабочей версии режим приходит с сервера. */
-enum class Scenario(private val titleUk: String, private val titleRu: String, private val hintUk: String, private val hintRu: String) {
-    Normal("Звичайний день", "Обычный день", "Діють графіки стабілізаційних відключень", "Действуют графики стабилизационных отключений"),
-    Emergency("Аварійні", "Аварийные", "У Києві аварійні відключення, графіки не діють", "В Киеве аварийные отключения, графики не действуют"),
-    Blackout("Блекаут", "Блэкаут", "Масштабне відключення по області", "Масштабное отключение по области"),
-    Calm("Без відключень", "Без отключений", "Графіки не застосовуються", "Графики не применяются");
-
-    val title: String get() = tr(titleUk, titleRu)
-    val hint: String get() = tr(hintUk, hintRu)
-}
-
 data class DaySchedule(
     val date: LocalDate,
     /** 48 слотов по 30 минут, начиная с 00:00. */
     val slots: List<Slot>,
     val forecast: Boolean,
+    /** false — графика на этот день ещё нет. */
+    val known: Boolean = true,
 ) {
     val offMinutes: Int get() = slots.count { it == Slot.Off } * 30
     val maybeMinutes: Int get() = slots.count { it == Slot.Maybe } * 30
@@ -72,7 +63,8 @@ private val CityRu = mapOf("Київ" to "Киев", "Запоріжжя" to "З
 /** Что показывать на главном экране прямо сейчас. */
 data class NowState(
     val type: OutageType,
-    val lightOn: Boolean,
+    /** null — неизвестно (аварийные отключения, блэкаут или графика нет). */
+    val lightOn: Boolean?,
     /** Время следующей смены состояния, если известно. */
     val nextChange: LocalDateTime?,
     /** Начало текущего отключения (для аварийных и блэкаута). */
@@ -82,6 +74,10 @@ data class NowState(
     /** Подтверждения «по факту». Показываем только в аварийном режиме и при блэкауте. */
     val factReports: Int?,
     val schedulesSuspended: Boolean,
+    /** Объявление оператора («Шановні клієнти!…»). */
+    val attention: String? = null,
+    val updatedAt: java.time.OffsetDateTime? = null,
+    val operator: String? = null,
 )
 
 data class RegionStatus(
@@ -89,6 +85,7 @@ data class RegionStatus(
     val name: String,
     val type: OutageType,
     val avgMinutes: Int?,
+    val hasData: Boolean = true,
 )
 
 data class AreaStats(
@@ -100,15 +97,8 @@ data class AreaStats(
     val days: List<Triple<Int, Int, Int>>,
     val dayLabels: List<String>,
     val queueOff: Map<String, Boolean>,
-)
-
-data class GridState(
-    val deficitMw: Int,
-    val consumptionMw: Int,
-    val peakHours: String,
-    val message: String,
-    val regionsWithSchedules: Int,
-    val savingTips: List<String>,
+    /** Минуты без света по моей очереди в те же дни. */
+    val myMinutes: List<Int> = emptyList(),
 )
 
 data class PowerWindow(val start: LocalDateTime, val end: LocalDateTime)

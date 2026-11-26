@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,16 +14,28 @@ android {
         applicationId = "ua.svetlo.monitor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2-test"
+        versionCode = 10
+        versionName = "1.0"
+    }
+
+    // Ключ подписи хранится вне репозитория. Путь к keystore.properties: свойство svetlo.keystore
+    // (~/.gradle/gradle.properties) или переменная SVETLO_KEYSTORE. Без него релиз подписывается отладочным ключом.
+    val ksFile = (findProperty("svetlo.keystore") as String?) ?: System.getenv("SVETLO_KEYSTORE")
+    val ks = ksFile?.let { f -> Properties().apply { file(f).inputStream().use { load(it) } } }
+    signingConfigs {
+        if (ks != null) create("release") {
+            storeFile = file(ks.getProperty("storeFile"))
+            storePassword = ks.getProperty("storePassword")
+            keyAlias = ks.getProperty("keyAlias")
+            keyPassword = ks.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Тестовая сборка подписана отладочным ключом. Для Google Play нужен свой ключ.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -33,7 +47,7 @@ android {
         jvmTarget = "17"
         freeCompilerArgs += listOf("-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi", "-opt-in=androidx.compose.ui.text.ExperimentalTextApi")
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
     testOptions {
         unitTests {
@@ -64,6 +78,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.work.runtime.ktx)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
