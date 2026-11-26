@@ -356,7 +356,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
 }
 
 @Composable
-fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, bg: Color = Svetlo.colors.inverse, fg: Color = Svetlo.colors.onInverse, outlined: Boolean = false) {
+fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, bg: Color = Svetlo.colors.accent, fg: Color = Svetlo.colors.onAccent, outlined: Boolean = false) {
     val c = Svetlo.colors
     Box(
         modifier

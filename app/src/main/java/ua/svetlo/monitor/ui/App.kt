@@ -208,8 +208,8 @@ private fun NavRail(route: String?, nav: NavHostController) {
         verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(c.inverse), contentAlignment = Alignment.Center) {
-            Icon(ua.svetlo.monitor.ui.screens.Bolt, null, tint = ua.svetlo.monitor.ui.theme.Status.Yellow, modifier = Modifier.size(24.dp))
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(ua.svetlo.monitor.ui.theme.Status.Yellow), contentAlignment = Alignment.Center) {
+            Icon(ua.svetlo.monitor.ui.screens.Bolt, null, tint = Color(0xFF16181D), modifier = Modifier.size(24.dp))
         }
         Box(Modifier.heightIn(min = 12.dp))
         Tabs.forEach { t -> NavItem(t, route in t.matches) { nav.goTab(t.route) } }

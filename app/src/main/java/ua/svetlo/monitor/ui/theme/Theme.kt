@@ -1,6 +1,10 @@
 package ua.svetlo.monitor.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -10,11 +14,9 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
@@ -74,7 +76,8 @@ val LightColors = SvetloColors(
     redSoft = Color(0xFFFCE1E1), redInk = Color(0xFFA3181B),
     blackSoft = Color(0xFFE4E3E0),
     mapBg = Color(0xFFEEECE6), mapRoad = Color(0xFFFFFFFF), mapPark = Color(0xFFDCEBD5), mapWater = Color(0xFFCFE0EE),
-    inverse = Color(0xFF16181D), onInverse = Color.White,
+    // Выделение выбранного: мягкий нейтрально-индиговый вместо чёрного.
+    inverse = Color(0xFFE4E2F8), onInverse = Color(0xFF2E2899),
 )
 
 val DarkColors = SvetloColors(
@@ -88,18 +91,23 @@ val DarkColors = SvetloColors(
     redSoft = Color(0xFF3A1416), redInk = Color(0xFFFFB3B4),
     blackSoft = Color(0xFF2A2D35),
     mapBg = Color(0xFF15171C), mapRoad = Color(0xFF2A2D35), mapPark = Color(0xFF16251B), mapWater = Color(0xFF14212E),
-    inverse = Color(0xFFF2F2F4), onInverse = Color(0xFF0F1014),
+    inverse = Color(0xFF363A4A), onInverse = Color(0xFFF2F2F4),
 )
 
-@OptIn(ExperimentalTextApi::class)
-private fun variable(res: Int, w: Int) =
-    Font(res, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+// Статические начертания, нарезанные из вариативных шрифтов: на части телефонов вариативный шрифт
+// из ресурсов кэшируется одним начертанием, и весь текст становится тонким.
 
 /** Onest: заголовки и цифры. */
-val Onest = FontFamily(listOf(500, 600, 700, 800).map { variable(R.font.onest, it) })
+val Onest = FontFamily(
+    Font(R.font.onest_500, FontWeight.Medium), Font(R.font.onest_600, FontWeight.SemiBold),
+    Font(R.font.onest_700, FontWeight.Bold), Font(R.font.onest_800, FontWeight.ExtraBold),
+)
 
 /** Manrope: основной текст. */
-val Manrope = FontFamily(listOf(400, 500, 600, 700, 800).map { variable(R.font.manrope, it) })
+val Manrope = FontFamily(
+    Font(R.font.manrope_400, FontWeight.Normal), Font(R.font.manrope_500, FontWeight.Medium), Font(R.font.manrope_600, FontWeight.SemiBold),
+    Font(R.font.manrope_700, FontWeight.Bold), Font(R.font.manrope_800, FontWeight.ExtraBold),
+)
 
 object Type {
     val display = TextStyle(fontFamily = Onest, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 36.sp, letterSpacing = (-0.3).sp)
@@ -145,6 +153,13 @@ fun SvetloTheme(
     val density = LocalDensity.current
     // Крупный шрифт в приложении работает поверх системного масштаба шрифта.
     val scaled = if (largeText) Density(density.density, density.fontScale * 1.25f) else density
+    // Значки строки состояния и навигации — тёмные на светлой теме и светлые на тёмной.
+    val view = LocalView.current
+    if (!view.isInEditMode) SideEffect {
+        (view.context as? Activity)?.window?.let { w ->
+            WindowCompat.getInsetsController(w, view).apply { isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark }
+        }
+    }
     CompositionLocalProvider(
         LocalColors provides c,
         LocalLargeText provides largeText,

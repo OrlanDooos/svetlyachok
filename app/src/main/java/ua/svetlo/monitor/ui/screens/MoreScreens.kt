@@ -101,7 +101,8 @@ import java.time.LocalDateTime
 fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settings) -> Unit) {
     val c = Svetlo.colors
     val w = LocalWindow.current
-    val premium: @Composable () -> Unit = {
+    // Premium пока скрыт по просьбе Романа (2026-11-26). Экран оставлен в коде.
+    @Suppress("UNUSED_VARIABLE") val premium: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFF16181D)).clickable { nav(Routes.Premium) }.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -131,7 +132,6 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
     val settings: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(horizontal = 16.dp, vertical = 2.dp)) {
             NavRow(tr("Сповіщення", "Уведомления"), if (s.remindMinutes > 0) tr("за ${s.remindMinutes} хв", "за ${s.remindMinutes} мин") else tr("вимк.", "выкл.")) { nav(Routes.Notif) }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
             Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(tr("Мова", "Язык"), style = Type.bodyBold, color = c.ink)
                 Segmented(listOf("Українська", "Русский"), s.lang.ordinal, { i -> update { it.copy(lang = Lang.entries[i]) } }, Modifier.fillMaxWidth())
@@ -174,13 +174,13 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
     if (w.twoPane) {
         Row(Modifier.fillMaxSize().padding(horizontal = w.gutter), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(tr("Ще", "Ещё"), style = Type.h1, color = c.ink); premium(); tools()
+                Text(tr("Ще", "Ещё"), style = Type.h1, color = c.ink); tools()
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.height(30.dp)); settings(); demo()
             }
         }
-    } else ScreenColumn { Text(tr("Ще", "Ещё"), style = Type.h1, color = c.ink); premium(); tools(); settings(); demo() }
+    } else ScreenColumn { Text(tr("Ще", "Ещё"), style = Type.h1, color = c.ink); tools(); settings(); demo() }
 }
 
 @Composable
@@ -224,7 +224,6 @@ fun AddressesScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onB
         } else {
             PrimaryButton(tr("+ Додати адресу", "+ Добавить адрес"), { adding = true }, Modifier.fillMaxWidth(), outlined = true)
         }
-        Text(tr("У безкоштовній версії до 3 адрес. У Premium без обмежень.", "В бесплатной версии до 3 адресов. В Premium без ограничений."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
     }
 }
 
