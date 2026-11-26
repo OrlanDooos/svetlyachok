@@ -22,7 +22,7 @@ import ua.svetlo.monitor.data.Settings
 import ua.svetlo.monitor.data.SettingsStore
 import java.time.LocalDateTime
 
-class SvetloApp : Application() {
+open class SvetloApp : Application() {
     val schedules: ScheduleStore by lazy { ScheduleStore(this) }
     val repository: OutageRepository by lazy { LiveRepository(schedules) }
     val settings: SettingsStore by lazy { SettingsStore(this) }
@@ -45,6 +45,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _now = MutableStateFlow(LocalDateTime.now())
     val now: StateFlow<LocalDateTime> = _now.asStateFlow()
 
+    // Объявлено до init: init сразу вызывает refresh().
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
     init {
         viewModelScope.launch {
             while (true) {
@@ -60,9 +64,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
-    private val _refreshing = MutableStateFlow(false)
-    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     fun refresh() {
         if (_refreshing.value) return
