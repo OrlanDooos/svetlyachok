@@ -1,0 +1,11 @@
+name: Probe sources
+on:
+  workflow_dispatch:
+  push:
+    paths: ['tools/probe_sources.sh', '.github/workflows/probe.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/probe_sources.sh
