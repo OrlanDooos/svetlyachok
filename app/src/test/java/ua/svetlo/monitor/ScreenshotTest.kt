@@ -58,6 +58,7 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         listOf("regions", "kyiv-city", "kyiv", "dnipropetrovsk", "odessa", "lviv", "zaporizhia").forEach { n ->
             store.put("$n.json", javaClass.getResource("/fixtures/$n.json")!!.readText())
         }
+        store.put("addr/zaporizhia.json", javaClass.getResource("/fixtures/addr/zaporizhia.json")!!.readText())
         LiveRepository(store)
     }
 
@@ -86,5 +87,6 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
     @Test fun sources() = shot("sources", Routes.Sources)
     @Test fun notif() = shot("notif", Routes.Notif)
     @Test fun cityZaporizhzhia() = shot("city_zp", Routes.city(id = "zaporizhzhia"), on.copy(selectedId = "parents"))
+    @Test fun cityZaporizhzhiaDark() = shot("city_zp_dark", Routes.city(id = "zaporizhzhia"), on.copy(selectedId = "parents", theme = ThemeMode.Dark))
     @Test fun homeRussian() = shot("home_ru", Routes.Home, on.copy(lang = Lang.Ru))
 }

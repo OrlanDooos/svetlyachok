@@ -100,6 +100,7 @@ fun HomeScreen(
     onSelect: (String) -> Unit,
     onRefresh: () -> Unit = {},
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
     val addr = s.selected
     val state = repo.now(addr.region, addr.queue, now)
     val today = repo.schedule(addr.region, addr.queue, now.toLocalDate())

@@ -10,6 +10,8 @@ import java.time.LocalDateTime
 interface OutageRepository {
     val version: kotlinx.coroutines.flow.StateFlow<Long>
     fun summary(region: String): RegionSummary?
+    fun addresses(region: String): AddressIndex?
+    suspend fun refreshAddresses(region: String)
     fun region(region: String): RegionData?
     fun queues(region: String): List<String>
     fun schedule(region: String, queue: String, date: LocalDate): DaySchedule

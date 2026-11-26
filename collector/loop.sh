@@ -9,6 +9,7 @@ publish() {
     rm -rf .git && git init -q -b data
     git config user.name "svetlyachok-bot"
     git config user.email "svetlyachok-bot@users.noreply.github.com"
+    touch .nojekyll
     git add -A && git commit -qm "data $(date -u +%FT%TZ)"
     for i in 1 2 3; do git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}" data && break; sleep 10; done )
 }

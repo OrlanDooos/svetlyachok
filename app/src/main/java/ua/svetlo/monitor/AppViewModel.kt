@@ -65,8 +65,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private var lastRefresh = 0L
+
+    /** Проверка новых графиков. Не чаще раза в минуту: сервер всё равно обновляется раз в 10 минут. */
     fun refresh() {
         if (_refreshing.value) return
+        val t = System.currentTimeMillis()
+        if (t - lastRefresh < 60_000) return
+        lastRefresh = t
         viewModelScope.launch {
             _refreshing.value = true
             val s = store.flow.first()

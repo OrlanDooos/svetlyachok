@@ -294,7 +294,8 @@ fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, 
 private const val CELL = 500f
 private fun cellKey(cx: Int, cy: Int): Long = (cx.toLong() shl 32) or (cy.toLong() and 0xffffffffL)
 
-private class CityIndex(city: CityMap) {
+/** queueKeys[i]: "crit" — критическая инфраструктура, "" — очередь неизвестна, иначе «6.1» или «1.2,5.1». */
+private class CityIndex(city: CityMap, private val queueKeys: Array<String>) {
     val cells = HashMap<Long, IntArray>()
     val lines: List<Triple<String, Path, android.graphics.RectF>>
     init {
@@ -314,18 +315,18 @@ private class CityIndex(city: CityMap) {
         }
     }
     /** Пути домов клетки строим лениво, при первом показе. */
-    val paths = HashMap<Long, Pair<Path, Path>>()
-    fun pathsFor(key: Long, city: CityMap): Pair<Path, Path>? {
+    val paths = HashMap<Long, Map<String, Path>>()
+    fun pathsFor(key: Long, city: CityMap): Map<String, Path>? {
         paths[key]?.let { return it }
         val idx = cells[key] ?: return null
-        val normal = Path(); val crit = Path()
+        val out = HashMap<String, Path>()
         idx.forEach { i ->
-            val b = city.buildings[i]; val p = if (b.critical) crit else normal
+            val b = city.buildings[i]; val p = out.getOrPut(queueKeys[i]) { Path() }
             val n = b.points.size / 2
             for (k in 0 until n) { val x = b.points[2 * k]; val y = b.points[2 * k + 1]; if (k == 0) p.moveTo(x, y) else p.lineTo(x, y) }
             p.close()
         }
-        return (normal to crit).also { paths[key] = it }
+        return out.also { paths[key] = it }
     }
     fun hit(city: CityMap, x: Float, y: Float): Int? {
         val cx = kotlin.math.floor(x / CELL).toInt(); val cy = kotlin.math.floor(y / CELL).toInt()
@@ -338,11 +339,22 @@ private class CityIndex(city: CityMap) {
 @Composable
 fun CityMapScreen(
     repo: OutageRepository, s: Settings, now: LocalDateTime, cityId: String?,
-    onBack: () -> Unit, onArea: () -> Unit, onMyHome: (street: String, city: CityMap) -> Unit,
+    onBack: () -> Unit, onArea: () -> Unit, onMyHome: (street: String, city: CityMap, queue: String?) -> Unit,
 ) {
     val ctx = LocalContext.current
     val city = remember(cityId) { MapAssets.city(ctx, cityId ?: MapAssets.cityIdFor(s.selected.region)) }
-    val index = remember(city) { CityIndex(city) }
+    val ver by repo.version.collectAsState()
+    LaunchedEffect(city.region) { repo.refreshAddresses(city.region) }
+    val addrIdx = remember(ver, city.region) { repo.addresses(city.region) }
+    // Очередь каждого дома — только по точному совпадению адреса со списками облэнерго.
+    val queueKeys = remember(city, addrIdx) {
+        Array(city.buildings.size) { i -> val b = city.buildings[i]; if (b.critical) "crit" else addrIdx?.queuesFor(b.address)?.joinToString(",") ?: "" }
+    }
+    val index = remember(city, queueKeys) { CityIndex(city, queueKeys) }
+    val minute = now.withSecond(0).withNano(0)
+    val keyColors = remember(ver, queueKeys, minute) {
+        queueKeys.toHashSet().filter { it != "" && it != "crit" }.associateWith { k -> houseLook(repo, city.region, k.split(','), now).first }
+    }
     // Мои адреса в этом городе: только их очередь мы знаем точно.
     val mine = remember(city, s.addresses) {
         s.addresses.filter { it.region == city.region && it.street.isNotBlank() }
@@ -414,16 +426,15 @@ fun CityMapScreen(
                         val cx0 = kotlin.math.floor(left / CELL).toInt(); val cx1 = kotlin.math.floor(right / CELL).toInt()
                         val cy0 = kotlin.math.floor(top / CELL).toInt(); val cy1 = kotlin.math.floor(bottom / CELL).toInt()
                         for (cx in cx0..cx1) for (cy in cy0..cy1) {
-                            val (normal, crit) = index.pathsFor(cellKey(cx, cy), city) ?: continue
-                            drawPath(normal, neutral)
-                            drawPath(crit, critical)
+                            index.pathsFor(cellKey(cx, cy), city)?.forEach { (k, p) ->
+                                drawPath(p, when (k) { "" -> neutral; "crit" -> critical; else -> keyColors[k] ?: neutral })
+                            }
                         }
-                        // Мои дома — цветом статуса своей очереди.
+                        // Мои дома — цветом своей очереди и с обводкой.
                         mine.forEach { (i, a) ->
                             val b = city.buildings[i]
                             val p = Path().apply { val n = b.points.size / 2; for (k in 0 until n) { if (k == 0) moveTo(b.points[0], b.points[1]) else lineTo(b.points[2 * k], b.points[2 * k + 1]) }; close() }
-                            val t = repo.queueOffNow(a.region, a.queue, now)
-                            drawPath(p, if (t == OutageType.None) Status.Green else t.color)
+                            drawPath(p, houseLook(repo, a.region, listOf(a.queue), now).first)
                             drawPath(p, c.ink, style = Stroke(2.4f / z))
                         }
                         picked?.let { i ->
@@ -493,8 +504,8 @@ fun CityMapScreen(
                     Modifier.width(if (w.shortHeight) 320.dp else 380.dp).fillMaxHeight().background(c.bg).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    picked?.let { BuildingPanel(city.buildings[it], city, mine[it], repo, now, onMyHome, onArea) }
-                        ?: Text(tr("Натисніть на будинок, щоб побачити адресу. Ваші адреси підсвічені кольором графіка.", "Нажмите на дом, чтобы увидеть адрес. Ваши адреса подсвечены цветом графика."), style = Type.body, color = c.ink2)
+                    picked?.let { BuildingPanel(city.buildings[it], city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) }
+                        ?: Text(tr("Натисніть на будинок, щоб побачити адресу і чергу. Колір — чи є зараз світло за графіком.", "Нажмите на дом, чтобы увидеть адрес и очередь. Цвет — есть ли сейчас свет по графику."), style = Type.body, color = c.ink2)
                 }
             }
         }
@@ -512,7 +523,7 @@ fun CityMapScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(5.dp).clip(CircleShape).background(c.line))
-                        picked?.let { BuildingPanel(city.buildings[it], city, mine[it], repo, now, onMyHome, onArea) }
+                        picked?.let { BuildingPanel(city.buildings[it], city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) }
                     }
                 }
                 if (picked == null && !w.useRail) Box(Modifier.height(BottomBarSpace))
@@ -521,36 +532,56 @@ fun CityMapScreen(
     }
 }
 
+/** Цвет и подпись дома по его подочередям: все со светом — зелёный, все без — цвет отключения, по-разному — «частично». */
+private fun houseLook(repo: OutageRepository, region: String, queues: List<String>, now: LocalDateTime): Pair<Color, String> {
+    val types = queues.map { repo.queueOffNow(region, it, now) }
+    return when {
+        types.all { it == OutageType.NoData } -> Status.NoData to tr("Немає графіка", "Нет графика")
+        types.all { it == OutageType.None } -> Status.Green to tr("Світло є", "Свет есть")
+        types.none { it == OutageType.None || it == OutageType.NoData } -> types.first().color to tr("Світла немає", "Света нет")
+        else -> Status.Maybe to tr("Частково", "Частично")
+    }
+}
+
 @Composable
 private fun BuildingPanel(
-    b: Building, city: CityMap, mine: ua.svetlo.monitor.data.Address?, repo: OutageRepository, now: LocalDateTime,
-    onMyHome: (String, CityMap) -> Unit, onArea: () -> Unit,
+    b: Building, city: CityMap, mine: ua.svetlo.monitor.data.Address?, queues: List<String>?, addrIdx: ua.svetlo.monitor.data.AddressIndex?,
+    repo: OutageRepository, now: LocalDateTime, onMyHome: (String, CityMap, String?) -> Unit, onArea: () -> Unit,
 ) {
     val c = Svetlo.colors
     val ctx = LocalContext.current
-    val st = mine?.let { repo.now(it.region, it.queue, now) }
+    val qs = mine?.let { listOf(it.queue) } ?: queues
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(b.address ?: tr("Будинок без адреси в OpenStreetMap", "Дом без адреса в OpenStreetMap"), style = Type.h2, color = c.ink)
+            Text(b.address ?: tr("Адреса невідома", "Адрес неизвестен"), style = Type.h2, color = c.ink)
             Text(
                 when {
                     b.critical -> tr("Об'єкт критичної інфраструктури", "Объект критической инфраструктуры")
                     mine != null -> tr("${mine.labelName} · черга ${mine.queue}", "${mine.labelName} · очередь ${mine.queue}")
+                    qs != null && qs.size == 1 -> tr("Черга ${qs[0]}", "Очередь ${qs[0]}")
+                    qs != null -> tr("Під'їзди в різних чергах: ${qs.joinToString(", ")}", "Подъезды в разных очередях: ${qs.joinToString(", ")}")
                     else -> city.city
                 },
                 style = Type.small, color = c.muted,
             )
         }
-        if (st != null) {
-            val (col, label) = stateLook(st)
+        if (qs != null) {
+            val (col, label) = houseLook(repo, city.region, qs, now)
             Pill(label, bg = c.surface2, fg = c.ink, border = null, dot = col)
         }
     }
-    if (mine != null && st != null) {
-        val today = repo.schedule(mine.region, mine.queue, now.toLocalDate())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MiniStat(if (st.lightOn == true) tr("Вимкнуть", "Отключат") else tr("Увімкнуть", "Включат"), st.nextChange?.let { tr("о ${it.hm()}", "в ${it.hm()}") } ?: "—", Modifier.weight(1f))
-            MiniStat(tr("Сьогодні без світла", "Сегодня без света"), if (today.known) formatDuration(today.offMinutes.toLong()) else "—", Modifier.weight(1f), onArea)
+    if (qs != null) {
+        if (qs.size == 1) {
+            val st = repo.now(city.region, qs[0], now)
+            val today = repo.schedule(city.region, qs[0], now.toLocalDate())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniStat(if (st.lightOn == true) tr("Вимкнуть", "Отключат") else tr("Увімкнуть", "Включат"), st.nextChange?.let { tr("о ${it.hm()}", "в ${it.hm()}") } ?: "—", Modifier.weight(1f))
+                MiniStat(tr("Сьогодні без світла", "Сегодня без света"), if (today.known) formatDuration(today.offMinutes.toLong()) else "—", Modifier.weight(1f), onArea)
+            }
+        }
+        if (mine == null) {
+            Text(tr("Черга — з переліків адрес ${addrIdx?.title?.substringBefore(':') ?: "обленерго"}.", "Очередь — из списков адресов ${addrIdx?.title?.substringBefore(':') ?: "облэнерго"}."), style = Type.caption, color = c.muted)
+            if (b.address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(b.address, city, qs.singleOrNull()) }, Modifier.fillMaxWidth())
         }
         return
     }
@@ -558,10 +589,15 @@ private fun BuildingPanel(
         Text(tr("Такі будівлі зазвичай не відключають за графіком.", "Такие здания обычно не отключают по графику."), style = Type.small, color = c.ink2)
         return
     }
-    Text(tr("Черга цього будинку нам поки невідома: базу «адреса → черга» ми ще збираємо. Свою чергу можна дізнатися на сайті оператора.",
-        "Очередь этого дома нам пока неизвестна: базу «адрес → очередь» мы ещё собираем. Свою очередь можно узнать на сайте оператора."), style = Type.small, color = c.ink2)
+    Text(
+        when {
+            b.address == null -> tr("У відкритих картах для цього будинку немає адреси, тому чергу не показуємо.", "В открытых картах у этого дома нет адреса, поэтому очередь не показываем.")
+            addrIdx == null -> tr("Для цього міста ще немає переліку адрес за чергами. Свою чергу можна дізнатися на сайті оператора.", "Для этого города ещё нет списка адресов по очередям. Свою очередь можно узнать на сайте оператора.")
+            else -> tr("Цієї адреси немає в переліках обленерго для населення. Свою чергу можна уточнити на сайті оператора.", "Этого адреса нет в списках облэнерго для населения. Свою очередь можно уточнить на сайте оператора.")
+        }, style = Type.small, color = c.ink2,
+    )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (b.address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(b.address, city) }, Modifier.weight(1f))
+        if (b.address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(b.address, city, null) }, Modifier.weight(1f))
         LookupUrls[city.region]?.let { url ->
             PrimaryButton(tr("Дізнатися чергу", "Узнать очередь"), {
                 runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -590,7 +626,8 @@ private fun MapLegend(modifier: Modifier = Modifier) {
         modifier.shadow(6.dp, CircleShape).clip(RoundedCornerShape(18.dp)).background(c.surface).padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        LegendItem(Status.Green, tr("Мій дім: світло є", "Мой дом: свет есть")); LegendItem(Status.Yellow, tr("відключення", "отключение")); LegendItem(if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6), tr("інші будинки", "другие дома"))
+        LegendItem(Status.Green, tr("світло є", "свет есть")); LegendItem(Status.Yellow, tr("відключення", "отключение")); LegendItem(Status.Maybe, tr("частково", "частично"))
+        LegendItem(if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6), tr("черга невідома", "очередь неизвестна"))
     }
 }
 

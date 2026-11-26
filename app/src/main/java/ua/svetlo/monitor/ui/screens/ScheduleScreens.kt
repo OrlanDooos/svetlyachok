@@ -103,7 +103,9 @@ fun Rise(delay: Int = 0, content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWindows: () -> Unit, onRemind: (Boolean) -> Unit) {
+fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRefresh: () -> Unit = {}, onWindows: () -> Unit, onRemind: (Boolean) -> Unit) {
+    // Открыли график — сразу проверяем, нет ли нового (сама проверка не чаще раза в минуту).
+    LaunchedEffect(Unit) { onRefresh() }
     var queue by remember(s.selected.queue) { mutableStateOf(s.selected.queue) }
     val c = Svetlo.colors
     val w = LocalWindow.current

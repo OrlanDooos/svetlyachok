@@ -17,7 +17,11 @@ import java.time.ZoneId
 
 /** Откуда берём графики: ветка data репозитория, её каждые 10 минут обновляет сборщик (collector/). */
 object DataSource {
-    const val BASE = "https://raw.githubusercontent.com/OrlanDooos/svetlyachok/data/v1/"
+    /** GitHub Pages из ветки data (CDN, рассчитан на раздачу), запасной вариант — raw.githubusercontent. */
+    val Bases = listOf(
+        "https://orlandooos.github.io/svetlyachok/v1/",
+        "https://raw.githubusercontent.com/OrlanDooos/svetlyachok/data/v1/",
+    )
     val Kyiv: ZoneId = ZoneId.of("Europe/Kyiv")
 }
 
@@ -100,21 +104,46 @@ class ScheduleStore(private val dir: File) {
         changed
     }
 
+    private val addr = HashMap<String, AddressIndex?>()
+
+    /** Списки «адрес → подочередь» из кэша (null — для области их нет или ещё не скачаны). */
+    fun addresses(region: String): AddressIndex? = synchronized(this) {
+        if (!addr.containsKey(region)) addr[region] = runCatching { AddressIndex.parse(File(dir, "addr/$region.json").readText()) }.getOrNull()
+        addr[region]
+    }
+
+    /** Скачивает списки адресов, если копия старше суток. Списки меняются редко, файл ~230 КБ. */
+    suspend fun refreshAddresses(region: String): Unit = withContext(Dispatchers.IO) {
+        val f = File(dir, "addr/$region.json")
+        if (f.exists() && System.currentTimeMillis() - f.lastModified() < 24 * 3600_000L) return@withContext
+        runCatching {
+            val body = download("addr/$region.json")
+            AddressIndex.parse(body)
+            f.parentFile?.mkdirs(); f.writeText(body)
+            synchronized(this@ScheduleStore) { addr.remove(region) }
+            _version.value = _version.value + 1
+        }
+    }
+
     /** Для тестов: положить данные в кэш. */
     fun put(name: String, json: String) {
-        dir.mkdirs(); File(dir, name).writeText(json)
-        synchronized(this) { summaries = null; regions.clear() }
+        File(dir, name).apply { parentFile?.mkdirs() }.writeText(json)
+        synchronized(this) { summaries = null; regions.clear(); addr.clear() }
         _version.value = _version.value + 1
     }
 
     private fun download(name: String): String {
-        val c = URL(DataSource.BASE + name + "?t=" + System.currentTimeMillis() / 60000).openConnection() as HttpURLConnection
-        c.connectTimeout = 15000; c.readTimeout = 20000
-        c.setRequestProperty("User-Agent", "Svetlyachok-Android")
-        try {
-            if (c.responseCode != 200) error("HTTP ${c.responseCode}")
-            return c.inputStream.bufferedReader().readText()
-        } finally { c.disconnect() }
+        var last: Exception? = null
+        for (base in DataSource.Bases) {
+            val c = URL(base + name + "?t=" + System.currentTimeMillis() / 60000).openConnection() as HttpURLConnection
+            c.connectTimeout = 15000; c.readTimeout = 20000
+            c.setRequestProperty("User-Agent", "Svetlyachok-Android")
+            try {
+                if (c.responseCode == 200) return c.inputStream.bufferedReader().readText()
+                last = IllegalStateException("HTTP ${c.responseCode}")
+            } catch (e: Exception) { last = e } finally { c.disconnect() }
+        }
+        throw last ?: IllegalStateException("no source")
     }
 
     private fun readSummaries(): List<RegionSummary> =
@@ -166,6 +195,8 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
     override val version: StateFlow<Long> get() = store.version
 
     override fun summary(region: String) = store.summaries().firstOrNull { it.id == region }
+    override fun addresses(region: String) = store.addresses(region)
+    override suspend fun refreshAddresses(region: String) { store.refreshAddresses(region) }
     override fun region(region: String) = store.region(region)
 
     override fun queues(region: String): List<String> =

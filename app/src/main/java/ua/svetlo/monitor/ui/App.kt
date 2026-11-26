@@ -264,19 +264,20 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
         composable(Routes.City) { e ->
             CityMapScreen(repo, s, now, cityId = e.arguments?.getString("id"),
                 onBack = { nav.popBackStack() }, onArea = { nav.navigate(Routes.Area) },
-                onMyHome = { street, city ->
-                    // Очередь дома по карте пока не знаем — сохраняем адрес и просим проверить очередь.
+                onMyHome = { street, city, queue ->
+                    // Очередь из списков облэнерго, если дом в них есть; иначе просим проверить её в адресах.
                     update { st ->
                         val cur = st.selected
-                        val home = cur.copy(street = street, city = city.cityUk, region = city.region, queue = if (cur.region == city.region) cur.queue else "1.1")
+                        val q = queue ?: if (cur.region == city.region) cur.queue else "1.1"
+                        val home = cur.copy(street = street, city = city.cityUk, region = city.region, queue = q)
                         st.copy(addresses = st.addresses.map { if (it.id == cur.id) home else it })
                     }
-                    nav.navigate(Routes.Addresses)
+                    if (queue != null) nav.goTab(Routes.Home) else nav.navigate(Routes.Addresses)
                 })
         }
         composable(Routes.Area) { AreaScreen(repo, s, onBack = { nav.popBackStack() }) }
         composable(Routes.Schedule) {
-            ScheduleScreen(repo, s, now, onWindows = { nav.navigate(Routes.Windows) },
+            ScheduleScreen(repo, s, now, onRefresh = onRefresh, onWindows = { nav.navigate(Routes.Windows) },
                 onRemind = { on -> update { it.copy(remindMinutes = if (on) 15 else 0) } })
         }
         composable(Routes.More) { MoreScreen(s, nav = { nav.navigate(it) }, update = update) }

@@ -305,6 +305,8 @@ def main():
             index.append(p)
     json.dump({"generatedAt": now.isoformat(timespec="seconds"), "regions": index},
               open(idx_path, "w"), ensure_ascii=False, indent=1)
+    import addresses
+    addresses.update(OUT, now, log)
 
 
 if __name__ == "__main__":
