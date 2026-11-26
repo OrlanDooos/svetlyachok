@@ -15,6 +15,7 @@ data class Settings(
     val onboarded: Boolean = false,
     val theme: ThemeMode = ThemeMode.System,
     val largeText: Boolean = false,
+    val lang: Lang = Lang.Uk,
     val scenario: Scenario = Scenario.Normal,
     val remindMinutes: Int = 15,
     val notifyChanges: Boolean = true,
@@ -28,10 +29,13 @@ data class Settings(
 }
 
 val DefaultAddresses = listOf(
-    Address("home", "Дом", MapAssets.HOME_ADDRESS, "Киев", "kyiv-city", "3.1"),
-    Address("mom", "Мама", "вулиця Городоцька, 12", "Львов", "lviv", "2.2"),
-    Address("dacha", "Дача", "вулиця Київська, 5", "Бровары", "kyiv", "4.1"),
+    Address("home", "Дім", MapAssets.HOME_ADDRESS, "Київ", "kyiv-city", "3.1"),
+    Address("mom", "Мама", "Соборний проспект, 151", "Запоріжжя", "zaporizhia", "4.2"),
+    Address("dacha", "Дача", "вулиця Київська, 5", "Бровари", "kyiv", "4.1"),
 )
+
+/** Адреса из сборки 0.1 сохранялись по-русски — переводим их в украинский вид. */
+private val LegacyUk = mapOf("Дом" to "Дім", "Киев" to "Київ", "Львов" to "Львів", "Бровары" to "Бровари")
 
 private val Context.store by preferencesDataStore("settings")
 
@@ -40,6 +44,7 @@ class SettingsStore(private val ctx: Context) {
         val onboarded = booleanPreferencesKey("onboarded")
         val theme = stringPreferencesKey("theme")
         val large = booleanPreferencesKey("large")
+        val lang = stringPreferencesKey("lang")
         val scenario = stringPreferencesKey("scenario")
         val remind = intPreferencesKey("remind")
         val nChanges = booleanPreferencesKey("n_changes")
@@ -59,6 +64,7 @@ class SettingsStore(private val ctx: Context) {
             onboarded = this[K.onboarded] ?: d.onboarded,
             theme = this[K.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: d.theme,
             largeText = this[K.large] ?: d.largeText,
+            lang = this[K.lang]?.let { runCatching { Lang.valueOf(it) }.getOrNull() } ?: d.lang,
             scenario = this[K.scenario]?.let { runCatching { Scenario.valueOf(it) }.getOrNull() } ?: d.scenario,
             remindMinutes = this[K.remind] ?: d.remindMinutes,
             notifyChanges = this[K.nChanges] ?: d.notifyChanges,
@@ -76,6 +82,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.onboarded] = s.onboarded
             p[K.theme] = s.theme.name
             p[K.large] = s.largeText
+            p[K.lang] = s.lang.name
             p[K.scenario] = s.scenario.name
             p[K.remind] = s.remindMinutes
             p[K.nChanges] = s.notifyChanges
@@ -93,6 +100,6 @@ class SettingsStore(private val ctx: Context) {
 
     private fun decode(s: String) = s.split("\u001e").mapNotNull { row ->
         val f = row.split("\u001f")
-        if (f.size == 6) Address(f[0], f[1], f[2], f[3], f[4], f[5]) else null
+        if (f.size == 6) Address(f[0], LegacyUk[f[1]] ?: f[1], f[2], LegacyUk[f[3]] ?: f[3], f[4], f[5]) else null
     }
 }

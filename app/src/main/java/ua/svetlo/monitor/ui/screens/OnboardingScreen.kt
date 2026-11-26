@@ -1,5 +1,7 @@
 package ua.svetlo.monitor.ui.screens
 
+import ua.svetlo.monitor.data.tr
+
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ua.svetlo.monitor.data.Address
+import ua.svetlo.monitor.data.Lang
 import ua.svetlo.monitor.data.OutageRepository
 import ua.svetlo.monitor.data.Settings
 import ua.svetlo.monitor.ui.LocalWindow
@@ -65,7 +68,7 @@ import ua.svetlo.monitor.ui.theme.Svetlo
 import ua.svetlo.monitor.ui.theme.Type
 
 @Composable
-fun OnboardingScreen(repo: OutageRepository, s: Settings, onDone: (Address) -> Unit) {
+fun OnboardingScreen(repo: OutageRepository, s: Settings, onLang: (Lang) -> Unit, onDone: (Address) -> Unit) {
     val pager = rememberPagerState { 3 }
     val scope = rememberCoroutineScope()
     var picked by remember { mutableStateOf<Address?>(null) }
@@ -82,19 +85,19 @@ fun OnboardingScreen(repo: OutageRepository, s: Settings, onDone: (Address) -> U
                         Box(Modifier.width(width).height(8.dp).clip(CircleShape).background(if (i == pager.currentPage) c.accent else c.line))
                     }
                 }
-                Text("Пропустить", style = Type.bodyBold, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onDone(picked ?: s.addresses.first()) }.padding(10.dp))
+                Text(tr("Пропустити", "Пропустить"), style = Type.bodyBold, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onDone(picked ?: s.addresses.first()) }.padding(10.dp))
             }
             HorizontalPager(pager, Modifier.weight(1f), userScrollEnabled = true) { page ->
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     when (page) {
-                        0 -> PageWelcome()
+                        0 -> PageWelcome(s.lang, onLang)
                         1 -> PageAddress(repo, picked) { picked = it }
                         else -> PageNotifications(picked ?: s.addresses.first())
                     }
                 }
             }
         }
-        val label = when (pager.currentPage) { 0 -> "Начать"; 1 -> if (picked != null) "Дальше" else "Выбрать позже"; else -> "Включить уведомления" }
+        val label = when (pager.currentPage) { 0 -> tr("Почати", "Начать"); 1 -> if (picked != null) tr("Далі", "Дальше") else tr("Обрати пізніше", "Выбрать позже"); else -> tr("Увімкнути сповіщення", "Включить уведомления") }
         PrimaryButton(label, {
             if (pager.currentPage < 2) scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
             else if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -104,33 +107,37 @@ fun OnboardingScreen(repo: OutageRepository, s: Settings, onDone: (Address) -> U
 }
 
 @Composable
-private fun PageWelcome() {
+private fun PageWelcome(lang: Lang, onLang: (Lang) -> Unit) {
     val c = Svetlo.colors
     val float = rememberInfiniteTransition(label = "f").animateFloat(0f, -6f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "y")
     Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.graphicsLayer { translationY = float.value * density }) { StatusOrb(Status.Yellow, c.yellowSoft, Bolt, size = 190.dp) }
     }
-    Text("Знайте заранее, когда будет свет", style = Type.display, color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-    Text("Графики, аварии и блэкауты по вашему дому. Напомним до отключения и сообщим, когда свет вернётся.", style = Type.body, color = c.ink2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Text(tr("Знайте заздалегідь, коли буде світло", "Знайте заранее, когда будет свет"), style = Type.display, color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Text(tr("Графіки, аварії та блекаути для вашого будинку. Нагадаємо до відключення і повідомимо, коли світло повернеться.", "Графики, аварии и блэкауты по вашему дому. Напомним до отключения и сообщим, когда свет вернётся."), style = Type.body, color = c.ink2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-        Pill("Русский", bg = c.inverse, fg = c.onInverse, border = null)
-        Box(Modifier.width(8.dp))
-        Pill("Українська · скоро", fg = c.muted)
+        Lang.entries.forEachIndexed { i, l ->
+            if (i > 0) Box(Modifier.width(8.dp))
+            val sel = l == lang
+            Box(Modifier.clip(RoundedCornerShape(50)).clickable { onLang(l) }) {
+                Pill(if (l == Lang.Uk) "Українська" else "Русский", bg = if (sel) c.inverse else c.surface, fg = if (sel) c.onInverse else c.ink2, border = if (sel) null else c.line)
+            }
+        }
     }
 }
 
 @Composable
 private fun PageAddress(repo: OutageRepository, picked: Address?, onPick: (Address) -> Unit) {
     val c = Svetlo.colors
-    Text("Где вы живёте?", style = Type.display, color = c.ink)
-    Text("По адресу мы сами найдём вашу очередь отключений. Номер очереди знать не нужно.", style = Type.body, color = c.ink2)
+    Text(tr("Де ви живете?", "Где вы живёте?"), style = Type.display, color = c.ink)
+    Text(tr("За адресою ми самі знайдемо вашу чергу відключень. Номер черги знати не потрібно.", "По адресу мы сами найдём вашу очередь отключений. Номер очереди знать не нужно."), style = Type.body, color = c.ink2)
     if (picked != null) {
         val pop = remember(picked) { Animatable(0.9f) }
         LaunchedEffect(picked) { pop.animateTo(1f, spring(dampingRatio = 0.45f)) }
         SCard(Modifier.fillMaxWidth().graphicsLayer { scaleX = pop.value; scaleY = pop.value }, color = c.greenSoft) {
-            Text("Нашли вашу очередь", style = Type.smallBold, color = c.greenInk)
+            Text(tr("Знайшли вашу чергу", "Нашли вашу очередь"), style = Type.smallBold, color = c.greenInk)
             Text(picked.street, style = Type.h2, color = c.ink)
-            Text("Киев, Печерский район · очередь ${picked.queue}", style = Type.body, color = c.ink2)
+            Text(tr("${picked.cityName} · черга ${picked.queue}", "${picked.cityName} · очередь ${picked.queue}"), style = Type.body, color = c.ink2)
         }
     }
     AddressPicker(repo, onPick)
@@ -140,9 +147,9 @@ private fun PageAddress(repo: OutageRepository, picked: Address?, onPick: (Addre
 private fun PageNotifications(addr: Address) {
     val c = Svetlo.colors
     val items = listOf(
-        Triple("Через 15 минут отключение", "16:00–20:00 · ${addr.label}", Status.Yellow),
-        Triple("Свет вернулся", "Раньше графика на 25 минут", Status.Green),
-        Triple("График изменился", "Завтра на 2 часа больше", c.accent),
+        Triple(tr("Через 15 хвилин відключення", "Через 15 минут отключение"), "16:00–20:00 · ${addr.labelName}", Status.Yellow),
+        Triple(tr("Світло повернулося", "Свет вернулся"), tr("Раніше за графік на 25 хвилин", "Раньше графика на 25 минут"), Status.Green),
+        Triple(tr("Графік змінився", "График изменился"), tr("Завтра на 2 години більше", "Завтра на 2 часа больше"), c.accent),
     )
     Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         items.forEachIndexed { i, (t, sub, col) ->
@@ -158,6 +165,6 @@ private fun PageNotifications(addr: Address) {
             }
         }
     }
-    Text("Не пропустите отключение", style = Type.display, color = c.ink)
-    Text("Предупредим заранее, сообщим, когда свет вернётся, и когда облэнерго изменит график.", style = Type.body, color = c.ink2)
+    Text(tr("Не пропустіть відключення", "Не пропустите отключение"), style = Type.display, color = c.ink)
+    Text(tr("Попередимо заздалегідь, повідомимо, коли світло повернеться і коли обленерго змінить графік.", "Предупредим заранее, сообщим, когда свет вернётся, и когда облэнерго изменит график."), style = Type.body, color = c.ink2)
 }

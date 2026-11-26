@@ -1,5 +1,7 @@
 package ua.svetlo.monitor.ui
 
+import ua.svetlo.monitor.data.tr
+
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -57,7 +59,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import ua.svetlo.monitor.AppViewModel
+import ua.svetlo.monitor.data.I18n
 import ua.svetlo.monitor.data.OutageRepository
 import ua.svetlo.monitor.data.Settings
 import java.time.LocalDateTime
@@ -83,8 +90,8 @@ object Routes {
     const val Onboarding = "onboarding"
     const val Home = "home"
     const val Map = "map"
-    const val City = "city?queue={queue}"
-    fun city(queue: String? = null) = if (queue == null) "city" else "city?queue=$queue"
+    const val City = "city?queue={queue}&id={id}"
+    fun city(queue: String? = null, id: String? = null) = listOfNotNull(queue?.let { "queue=$it" }, id?.let { "id=$it" }).joinToString("&").let { if (it.isEmpty()) "city" else "city?$it" }
     const val Schedule = "schedule"
     const val More = "more"
     const val Area = "area"
@@ -99,11 +106,11 @@ object Routes {
 
 private data class Tab(val route: String, val title: String, val icon: ImageVector, val matches: Set<String>)
 
-private val Tabs = listOf(
-    Tab(Routes.Home, "Главная", Icons.Rounded.Home, setOf(Routes.Home)),
-    Tab(Routes.Map, "Карта", Icons.Rounded.Map, setOf(Routes.Map, Routes.City, Routes.Area)),
-    Tab(Routes.Schedule, "График", Icons.Rounded.CalendarMonth, setOf(Routes.Schedule, Routes.Windows)),
-    Tab(Routes.More, "Ещё", Icons.Rounded.Tune, setOf(Routes.More, Routes.Addresses, Routes.Notif, Routes.Grid, Routes.Report, Routes.Premium, Routes.Widgets)),
+private val Tabs: List<Tab> get() = listOf(
+    Tab(Routes.Home, tr("Головна", "Главная"), Icons.Rounded.Home, setOf(Routes.Home)),
+    Tab(Routes.Map, tr("Мапа", "Карта"), Icons.Rounded.Map, setOf(Routes.Map, Routes.City, Routes.Area)),
+    Tab(Routes.Schedule, tr("Графік", "График"), Icons.Rounded.CalendarMonth, setOf(Routes.Schedule, Routes.Windows)),
+    Tab(Routes.More, tr("Ще", "Ещё"), Icons.Rounded.Tune, setOf(Routes.More, Routes.Addresses, Routes.Notif, Routes.Grid, Routes.Report, Routes.Premium, Routes.Widgets)),
 )
 
 /** Нижняя панель занимает примерно столько места, контент оставляет под неё отступ. */
@@ -126,10 +133,15 @@ fun SvetloContent(
     update: ((Settings) -> Settings) -> Unit,
     startRoute: String? = null,
 ) {
+    I18n.lang = s.lang
+    // При смене языка пересоздаём интерфейс, чтобы все строки перечитались, и остаёмся в «Ещё».
+    var lastLang by remember { mutableStateOf(s.lang) }
+    var langStart by remember { mutableStateOf<String?>(null) }
+    if (lastLang != s.lang) { lastLang = s.lang; langStart = if (s.onboarded) Routes.More else null }
     SvetloTheme(mode = s.theme, largeText = s.largeText) {
         BoxWithConstraints(Modifier.fillMaxSize().background(Svetlo.colors.bg)) {
             CompositionLocalProvider(LocalWindow provides WindowLayout(maxWidth, maxHeight)) {
-                AppShell(repo, s, now, update, startRoute)
+                key(s.lang) { AppShell(repo, s, now, update, langStart ?: startRoute) }
             }
         }
     }
@@ -235,7 +247,7 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
         popEnterTransition = { enter(this) }, popExitTransition = { fadeOut(tween(180)) },
     ) {
         composable(Routes.Onboarding) {
-            OnboardingScreen(repo, s, onDone = { addr ->
+            OnboardingScreen(repo, s, onLang = { l -> update { it.copy(lang = l) } }, onDone = { addr ->
                 update { it.copy(onboarded = true, addresses = listOf(addr) + it.addresses.filter { a -> a.id != addr.id }, selectedId = addr.id) }
                 nav.navigate(Routes.Home) { popUpTo(Routes.Onboarding) { inclusive = true } }
             })
@@ -250,13 +262,13 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
                 onSelect = { id -> update { it.copy(selectedId = id) } },
             )
         }
-        composable(Routes.Map) { MapUkraineScreen(repo, s, onCity = { nav.navigate(Routes.city()) }) }
+        composable(Routes.Map) { MapUkraineScreen(repo, s, onCity = { id -> nav.navigate(Routes.city(id = id)) }) }
         composable(Routes.City) { e ->
-            CityMapScreen(repo, s, now, initialQueue = e.arguments?.getString("queue"),
+            CityMapScreen(repo, s, now, initialQueue = e.arguments?.getString("queue"), cityId = e.arguments?.getString("id"),
                 onBack = { nav.popBackStack() }, onArea = { nav.navigate(Routes.Area) },
-                onMyHome = { street, queue ->
+                onMyHome = { street, queue, city ->
                     update { st ->
-                        val home = st.addresses.first().copy(street = street, city = "Киев", region = "kyiv-city", queue = queue)
+                        val home = st.addresses.first().copy(street = street, city = city.cityUk, region = city.region, queue = queue)
                         st.copy(addresses = listOf(home) + st.addresses.drop(1), selectedId = home.id)
                     }
                     nav.goTab(Routes.Home)

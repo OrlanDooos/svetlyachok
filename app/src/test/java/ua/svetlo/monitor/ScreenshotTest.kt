@@ -10,6 +10,7 @@ import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import ua.svetlo.monitor.data.Lang
 import ua.svetlo.monitor.data.MockRepository
 import ua.svetlo.monitor.data.Scenario
 import ua.svetlo.monitor.data.Settings
@@ -65,4 +66,7 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
     @Test fun grid() = shot("grid", Routes.Grid)
     @Test fun addresses() = shot("addresses", Routes.Addresses)
     @Test fun premium() = shot("premium", Routes.Premium)
+    @Test fun cityZaporizhzhia() = shot("city_zp", Routes.city(id = "zaporizhzhia"))
+    @Test fun homeRussian() = shot("home_ru", Routes.Home, Settings(onboarded = true, lang = Lang.Ru))
+    @Test fun moreRussian() = shot("more_ru", Routes.More, Settings(onboarded = true, lang = Lang.Ru))
 }

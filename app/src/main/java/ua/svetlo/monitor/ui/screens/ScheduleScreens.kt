@@ -1,5 +1,8 @@
 package ua.svetlo.monitor.ui.screens
 
+import ua.svetlo.monitor.data.tr
+import ua.svetlo.monitor.data.MapAssets
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -110,10 +113,10 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
     val weekCard: @Composable () -> Unit = {
         Rise {
             SCard(Modifier.fillMaxWidth()) {
-                SectionHeader("Неделя", "00 — 24 ч")
+                SectionHeader(tr("Тиждень", "Неделя"), tr("00 — 24 год", "00 — 24 ч"))
                 days.forEachIndexed { i, d ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (i == 0) "Сегодня" else "${d.date.dayOfWeek.ruShort()} ${d.date.dayOfMonth}",
+                        Text(if (i == 0) tr("Сьогодні", "Сегодня") else "${d.date.dayOfWeek.ruShort()} ${d.date.dayOfMonth}",
                             style = Type.caption.copy(fontWeight = if (i == 0) FontWeight.ExtraBold else FontWeight.SemiBold),
                             color = if (i == 0) c.ink else c.muted, modifier = Modifier.width(60.dp))
                         Box(Modifier.weight(1f).graphicsLayer { alpha = if (d.forecast) 0.75f else 1f }) {
@@ -123,9 +126,9 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    LegendItem(Status.Green, "Свет есть"); LegendItem(Status.Yellow, "Отключение"); LegendItem(Status.Maybe, "Возможно"); LegendItem(Status.Forecast, "Прогноз")
+                    LegendItem(Status.Green, tr("Світло є", "Свет есть")); LegendItem(Status.Yellow, tr("Відключення", "Отключение")); LegendItem(Status.Maybe, tr("Можливо", "Возможно")); LegendItem(Status.Forecast, tr("Прогноз", "Прогноз"))
                 }
-                Text("Прогноз строим по прошлым неделям. Точный график облэнерго публикует накануне вечером.", style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
+                Text(tr("Прогноз будуємо за минулими тижнями. Точний графік обленерго публікує напередодні ввечері.", "Прогноз строим по прошлым неделям. Точный график облэнерго публикует накануне вечером."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
             }
         }
     }
@@ -133,7 +136,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
         Rise(80) {
             SCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 6.dp)) {
                 val windows = (today.windows(Slot.Off).map { it to false } + today.windows(Slot.Maybe).map { it to true }).sortedBy { it.first.first }
-                if (windows.isEmpty()) Text("Сегодня отключений нет", style = Type.body, color = c.ink2, modifier = Modifier.padding(vertical = 12.dp))
+                if (windows.isEmpty()) Text(tr("Сьогодні відключень немає", "Сегодня отключений нет"), style = Type.body, color = c.ink2, modifier = Modifier.padding(vertical = 12.dp))
                 windows.forEachIndexed { i, (r, maybe) ->
                     val start = now.toLocalDate().atStartOfDay().plusMinutes(r.first * 30L)
                     val end = now.toLocalDate().atStartOfDay().plusMinutes((r.last + 1) * 30L)
@@ -144,14 +147,14 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
                         Column(Modifier.weight(1f)) {
                             Text("${start.hm()} – ${end.hm()}", style = Type.bodyBold.copy(fontFamily = ua.svetlo.monitor.ui.theme.Onest, fontWeight = FontWeight.SemiBold), color = c.ink)
                             val note = when {
-                                past -> if (maybe) "Возможное отключение · прошло" else "Прошло · ${formatDuration((r.last - r.first + 1) * 30L)}"
-                                active -> "Идёт сейчас · включат в ${end.hm()}"
-                                maybe -> "Возможное отключение"
-                                else -> "Через ${formatDuration(between(now, start))}"
+                                past -> if (maybe) tr("Можливе відключення · минуло", "Возможное отключение · прошло") else tr("Минуло · ${formatDuration((r.last - r.first + 1) * 30L)}", "Прошло · ${formatDuration((r.last - r.first + 1) * 30L)}")
+                                active -> tr("Триває зараз · увімкнуть о ${end.hm()}", "Идёт сейчас · включат в ${end.hm()}")
+                                maybe -> tr("Можливе відключення", "Возможное отключение")
+                                else -> tr("Через ${formatDuration(between(now, start))}", "Через ${formatDuration(between(now, start))}")
                             }
                             Text(note, style = if (!past) Type.smallBold else Type.small, color = if (!past) c.yellowInk else c.muted)
                         }
-                        if (!past && !maybe && s.remindMinutes > 0) Pill("за ${s.remindMinutes} мин", bg = c.accentSoft, fg = c.accent, border = null, icon = Icons.Rounded.NotificationsActive)
+                        if (!past && !maybe && s.remindMinutes > 0) Pill(tr("за ${s.remindMinutes} хв", "за ${s.remindMinutes} мин"), bg = c.accentSoft, fg = c.accent, border = null, icon = Icons.Rounded.NotificationsActive)
                     }
                     if (i < windows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
                 }
@@ -161,18 +164,18 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
     val remind: @Composable () -> Unit = {
         Rise(160) {
             SCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 6.dp)) {
-                ToggleRow("Напоминать перед отключением", "И сообщать, когда график меняется", s.remindMinutes > 0, onRemind)
+                ToggleRow(tr("Нагадувати перед відключенням", "Напоминать перед отключением"), tr("І повідомляти, коли графік змінюється", "И сообщать, когда график меняется"), s.remindMinutes > 0, onRemind)
             }
         }
         SCard(Modifier.fillMaxWidth(), onClick = onWindows) {
-            SectionHeader("Окна света и подготовка", "Открыть", onWindows)
-            Text("Когда можно постирать, зарядить технику и приготовить еду.", style = Type.small, color = c.ink2)
+            SectionHeader(tr("Вікна світла і підготовка", "Окна света и подготовка"), tr("Відкрити", "Открыть"), onWindows)
+            Text(tr("Коли можна випрати, зарядити техніку і приготувати їжу.", "Когда можно постирать, зарядить технику и приготовить еду."), style = Type.small, color = c.ink2)
         }
     }
     val header: @Composable () -> Unit = {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("График", style = Type.h1, color = c.ink, modifier = Modifier.weight(1f))
-            Pill("${s.selected.label} · ${s.selected.queue}", border = c.line, style = Type.smallBold.copy(fontSize = Type.body.fontSize * 0.93f))
+            Text(tr("Графік", "График"), style = Type.h1, color = c.ink, modifier = Modifier.weight(1f))
+            Pill("${s.selected.labelName} · ${s.selected.queue}", border = c.line, style = Type.smallBold.copy(fontSize = Type.body.fontSize * 0.93f))
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(repo.queues) { q ->
@@ -185,7 +188,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
             }
         }
         if (s.scenario == ua.svetlo.monitor.data.Scenario.Emergency || s.scenario == ua.svetlo.monitor.data.Scenario.Blackout) {
-            Pill("Сейчас графики не действуют: аварийные отключения", bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
+            Pill(tr("Зараз графіки не діють: аварійні відключення", "Сейчас графики не действуют: аварийные отключения"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
         }
     }
     if (w.twoPane) {
@@ -200,7 +203,9 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onWi
 
 @Composable
 fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
-    val a = repo.area(s.scenario)
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val cityMap = remember(s.selected.region) { MapAssets.city(ctx, repo.queues, MapAssets.cityIdFor(s.selected.region)) }
+    val a = repo.area(s.scenario).let { it.copy(title = cityMap.district, city = cityMap.city) }
     val c = Svetlo.colors
     var period by remember { mutableIntStateOf(0) }
     val w = LocalWindow.current
@@ -208,20 +213,20 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
     val all = (totals.first + totals.second + totals.third).coerceAtLeast(1)
 
     val head: @Composable () -> Unit = {
-        BackHeader(a.title, a.city, onBack) { SquareButton(Icons.Rounded.BookmarkBorder, "В избранное", {}, tint = c.accent) }
+        BackHeader(a.title, a.city, onBack) { SquareButton(Icons.Rounded.BookmarkBorder, tr("В обране", "В избранное"), {}, tint = c.accent) }
         SCard(Modifier.fillMaxWidth()) {
             val soft = when (a.type) { OutageType.Emergency -> c.redSoft; OutageType.Blackout -> c.blackSoft; OutageType.None -> c.greenSoft; else -> c.yellowSoft }
             val ink = when (a.type) { OutageType.Emergency -> c.redInk; OutageType.Blackout -> c.ink; OutageType.None -> c.greenInk; else -> c.yellowInk }
-            Pill("Сейчас: ${a.type.title.lowercase()}", bg = soft, fg = ink, border = null, dot = a.type.color, blink = a.type == OutageType.Emergency)
+            Pill(tr("Зараз: ${a.type.title.lowercase()}", "Сейчас: ${a.type.title.lowercase()}"), bg = soft, fg = ink, border = null, dot = a.type.color, blink = a.type == OutageType.Emergency)
             Text(formatDuration(a.avgMinutes.toLong()), style = Type.bigNumber, color = c.ink)
-            Text("среднее время без света в день за 7 дней", style = Type.body, color = c.ink2)
+            Text(tr("середній час без світла на день за 7 днів", "среднее время без света в день за 7 дней"), style = Type.body, color = c.ink2)
         }
     }
     val chart: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Часы без света", style = Type.section, color = c.ink, modifier = Modifier.weight(1f))
-                Segmented(listOf("7 дней", "30 дней"), period, { period = it }, Modifier.width(190.dp))
+                Text(tr("Години без світла", "Часы без света"), style = Type.section, color = c.ink, modifier = Modifier.weight(1f))
+                Segmented(listOf(tr("7 днів", "7 дней"), tr("30 днів", "30 дней")), period, { period = it }, Modifier.width(190.dp))
             }
             val grow = remember { Animatable(0f) }
             LaunchedEffect(period) { grow.snapTo(0f); grow.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
@@ -239,13 +244,13 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 a.dayLabels.forEachIndexed { i, l -> Text(l, style = Type.caption, color = if (i == 6) c.ink else c.muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f)) }
             }
-            if (period == 1) Text("За 30 дней данных пока мало, показываем последнюю неделю.", style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
+            if (period == 1) Text(tr("За 30 днів даних поки мало, показуємо останній тиждень.", "За 30 дней данных пока мало, показываем последнюю неделю."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
         }
     }
     val types: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth()) {
-            Text("По типам отключений", style = Type.section, color = c.ink)
-            listOf(Triple("Стабилизационные", totals.first, Status.Yellow), Triple("Аварийные", totals.second, Status.Red), Triple("Блэкаут", totals.third, Status.Black)).forEachIndexed { i, (n, m, col) ->
+            Text(tr("За типами відключень", "По типам отключений"), style = Type.section, color = c.ink)
+            listOf(Triple(tr("Стабілізаційні", "Стабилизационные"), totals.first, Status.Yellow), Triple(tr("Аварійні", "Аварийные"), totals.second, Status.Red), Triple(tr("Блекаут", "Блэкаут"), totals.third, Status.Black)).forEachIndexed { i, (n, m, col) ->
                 val share = m.toFloat() / all
                 val anim = remember { Animatable(0f) }
                 LaunchedEffect(Unit) { anim.animateTo(share, tween(800, delayMillis = i * 100, easing = FastOutSlowInEasing)) }
@@ -256,14 +261,14 @@ fun AreaScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Dot(Status.Blue); Text("Плановых работ не было", style = Type.small, color = c.ink2) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Dot(Status.Blue); Text(tr("Планових робіт не було", "Плановых работ не было"), style = Type.small, color = c.ink2) }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Dot(Status.Orange); Text("Локальных аварий не было", style = Type.small, color = c.ink2) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Dot(Status.Orange); Text(tr("Локальних аварій не було", "Локальных аварий не было"), style = Type.small, color = c.ink2) }
         }
     }
     val queues: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth()) {
-            SectionHeader("Очереди района", "сейчас")
+            SectionHeader(tr("Черги району", "Очереди района"), tr("зараз", "сейчас"))
             a.queueOff.entries.chunked(6).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.forEach { (q, off) ->
@@ -289,10 +294,10 @@ fun WindowsScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBac
     val windows = repo.powerWindows(s.selected.queue, now.toLocalDate(), s.scenario).filter { it.end.isAfter(now) }
     val tasks = remember { mutableStateOf(setOf(1)) }
     ScreenColumn {
-        BackHeader("Окна света", "${s.selected.label} · очередь ${s.selected.queue}", onBack)
+        BackHeader(tr("Вікна світла", "Окна света"), tr("${s.selected.labelName} · черга ${s.selected.queue}", "${s.selected.labelName} · очередь ${s.selected.queue}"), onBack)
         SCard(Modifier.fillMaxWidth()) {
-            SectionHeader("Сегодня свет будет")
-            if (windows.isEmpty()) Text("Сегодня окон света больше нет.", style = Type.body, color = c.ink2)
+            SectionHeader(tr("Сьогодні світло буде", "Сегодня свет будет"))
+            if (windows.isEmpty()) Text(tr("Сьогодні вікон світла більше немає.", "Сегодня окон света больше нет."), style = Type.body, color = c.ink2)
             windows.forEach { pw ->
                 val active = !now.isBefore(pw.start)
                 Row(
@@ -302,15 +307,15 @@ fun WindowsScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBac
                     Icon(Bolt, null, tint = Status.Green, modifier = Modifier.size(24.dp))
                     Column(Modifier.weight(1f)) {
                         Text("${pw.start.hm()} – ${pw.end.hm()}", style = Type.bodyBold.copy(fontFamily = ua.svetlo.monitor.ui.theme.Onest), color = c.ink)
-                        Text(if (active) "Сейчас · осталось ${formatDuration(between(now, pw.end))}" else "Через ${formatDuration(between(now, pw.start))}", style = Type.small, color = if (active) c.greenInk else c.muted)
+                        Text(if (active) tr("Зараз · залишилося ${formatDuration(between(now, pw.end))}", "Сейчас · осталось ${formatDuration(between(now, pw.end))}") else tr("Через ${formatDuration(between(now, pw.start))}", "Через ${formatDuration(between(now, pw.start))}"), style = Type.small, color = if (active) c.greenInk else c.muted)
                     }
                     Text(formatDuration(between(pw.start, pw.end)), style = Type.smallBold, color = c.ink2)
                 }
             }
         }
         SCard(Modifier.fillMaxWidth()) {
-            SectionHeader("Успеть, пока есть свет")
-            listOf("Зарядить телефон и павербанк", "Запустить стирку", "Набрать воду", "Приготовить еду на вечер", "Зарядить фонарик").forEachIndexed { i, t ->
+            SectionHeader(tr("Встигнути, поки є світло", "Успеть, пока есть свет"))
+            listOf(tr("Зарядити телефон і павербанк", "Зарядить телефон и павербанк"), tr("Запустити прання", "Запустить стирку"), tr("Набрати воду", "Набрать воду"), tr("Приготувати їжу на вечір", "Приготовить еду на вечер"), tr("Зарядити ліхтарик", "Зарядить фонарик")).forEachIndexed { i, t ->
                 val done = i in tasks.value
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { tasks.value = if (done) tasks.value - i else tasks.value + i }.padding(vertical = 6.dp),

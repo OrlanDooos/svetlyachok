@@ -110,24 +110,26 @@ class MockRepository : OutageRepository {
     }
 
     override fun regions(scenario: Scenario): List<RegionStatus> {
+        // Тестовые данные. «Обычный день» — как типичный день с графиками: везде стабилизационные,
+        // на западе часть областей без отключений. Аварийные и блэкаут — только в соответствующих сценариях.
         val base = linkedMapOf(
             "kyiv-city" to (OutageType.Stabilization to 260), "kyiv" to (OutageType.Stabilization to 300),
-            "chernihiv" to (OutageType.Emergency to 380), "sumy" to (OutageType.Blackout to 450),
-            "kharkiv" to (OutageType.Blackout to 485), "poltava" to (OutageType.Stabilization to 290),
-            "dnipropetrovsk" to (OutageType.Emergency to 330), "zaporizhia" to (OutageType.Emergency to 360),
-            "donetsk" to (OutageType.Blackout to 540), "kherson" to (OutageType.Emergency to 400),
-            "mykolaiv" to (OutageType.Stabilization to 310), "odessa" to (OutageType.Emergency to 340),
+            "chernihiv" to (OutageType.Stabilization to 340), "sumy" to (OutageType.Stabilization to 380),
+            "kharkiv" to (OutageType.Stabilization to 410), "poltava" to (OutageType.Stabilization to 290),
+            "dnipropetrovsk" to (OutageType.Stabilization to 350), "zaporizhia" to (OutageType.Stabilization to 370),
+            "donetsk" to (OutageType.Stabilization to 430), "kherson" to (OutageType.Stabilization to 400),
+            "mykolaiv" to (OutageType.Stabilization to 310), "odessa" to (OutageType.Stabilization to 330),
             "kirovohrad" to (OutageType.Stabilization to 280), "cherkasy" to (OutageType.Stabilization to 270),
             "vinnytsia" to (OutageType.Stabilization to 250), "zhytomyr" to (OutageType.Stabilization to 240),
-            "khmelnytskyi" to (OutageType.None to 90), "rivne" to (OutageType.Stabilization to 200),
-            "volyn" to (OutageType.None to 70), "lviv" to (OutageType.None to 60),
+            "khmelnytskyi" to (OutageType.Stabilization to 180), "rivne" to (OutageType.Stabilization to 200),
+            "volyn" to (OutageType.None to 70), "lviv" to (OutageType.Stabilization to 150),
             "ternopil" to (OutageType.Stabilization to 180), "ivano-frankivsk" to (OutageType.None to 75),
             "zakarpattia" to (OutageType.None to 40), "chernivtsi" to (OutageType.None to 55),
             "crimea" to (OutageType.NoData to null), "luhansk" to (OutageType.NoData to null),
         )
         when (scenario) {
             Scenario.Emergency -> { base["kyiv-city"] = OutageType.Emergency to 320; base["kyiv"] = OutageType.Emergency to 350 }
-            Scenario.Blackout -> { base["kyiv-city"] = OutageType.Blackout to 600; base["kyiv"] = OutageType.Blackout to 620 }
+            Scenario.Blackout -> { base["kyiv-city"] = OutageType.Blackout to 600; base["kyiv"] = OutageType.Blackout to 620; base["chernihiv"] = OutageType.Emergency to 420; base["zhytomyr"] = OutageType.Emergency to 380 }
             Scenario.Calm -> base.keys.toList().forEach { k -> if (base[k]!!.first != OutageType.NoData) base[k] = OutageType.None to 20 }
             Scenario.Normal -> Unit
         }
@@ -147,60 +149,61 @@ class MockRepository : OutageRepository {
         val days = raw.map { Triple(it.first * 60, it.second * 60, it.third * 40) }
         val avg = days.sumOf { it.first + it.second + it.third } / 7
         val at = LocalDateTime.now()
-        return AreaStats("Печерский район", "Киев", type, avg, days, labels, queues.associateWith { queueOffNow(it, at, scenario) != OutageType.None })
+        return AreaStats(tr("Печерський район", "Печерский район"), tr("Київ", "Киев"), type, avg, days, labels, queues.associateWith { queueOffNow(it, at, scenario) != OutageType.None })
     }
 
     override fun grid(scenario: Scenario): GridState = when (scenario) {
-        Scenario.Calm -> GridState(0, 11800, "—", "Энергосистема сбалансирована, отключений нет.", 0, listOf("Можно пользоваться техникой как обычно"))
-        Scenario.Blackout -> GridState(4200, 9100, "весь день", "После массированной атаки энергосистема работает в аварийном режиме. Графики не действуют.", 24,
-            listOf("Отключите мощные приборы", "Зарядите павербанки, когда дадут свет", "Следите за сообщениями оператора"))
+        Scenario.Calm -> GridState(0, 11800, "—", tr("Енергосистема збалансована, відключень немає.", "Энергосистема сбалансирована, отключений нет."), 0, listOf(tr("Можна користуватися технікою як зазвичай", "Можно пользоваться техникой как обычно")))
+        Scenario.Blackout -> GridState(4200, 9100, tr("увесь день", "весь день"), tr("Після масованої атаки енергосистема працює в аварійному режимі. Графіки не діють.", "После массированной атаки энергосистема работает в аварийном режиме. Графики не действуют."), 24,
+            listOf(tr("Вимкніть потужні прилади", "Отключите мощные приборы"), tr("Зарядіть павербанки, коли дадуть світло", "Зарядите павербанки, когда дадут свет"), tr("Стежте за повідомленнями оператора", "Следите за сообщениями оператора")))
         else -> GridState(if (scenario == Scenario.Emergency) 2600 else 1400, 12600, "17:00 – 22:00",
-            "Дефицит мощности в энергосистеме. Применяются графики отключений во всех регионах, кроме части запада.", 19,
-            listOf("Не включайте одновременно бойлер и духовку с 17:00 до 22:00", "Стирку и зарядку лучше перенести на день", "Выключайте свет в пустых комнатах"))
+            tr("Дефіцит потужності в енергосистемі. Графіки відключень застосовують у всіх регіонах, крім частини заходу.", "Дефицит мощности в энергосистеме. Применяются графики отключений во всех регионах, кроме части запада."), 19,
+            listOf(tr("Не вмикайте одночасно бойлер і духовку з 17:00 до 22:00", "Не включайте одновременно бойлер и духовку с 17:00 до 22:00"), tr("Прання і зарядку краще перенести на день", "Стирку и зарядку лучше перенести на день"), tr("Вимикайте світло в порожніх кімнатах", "Выключайте свет в пустых комнатах")))
     }
 
     companion object {
-        val RegionNames = mapOf(
-            "cherkasy" to "Черкасская область", "chernihiv" to "Черниговская область", "chernivtsi" to "Черновицкая область",
-            "crimea" to "АР Крым", "dnipropetrovsk" to "Днепропетровская область", "donetsk" to "Донецкая область",
-            "ivano-frankivsk" to "Ивано-Франковская область", "kharkiv" to "Харьковская область", "kherson" to "Херсонская область",
-            "khmelnytskyi" to "Хмельницкая область", "kirovohrad" to "Кировоградская область", "kyiv" to "Киевская область",
-            "kyiv-city" to "Киев", "luhansk" to "Луганская область", "lviv" to "Львовская область", "mykolaiv" to "Николаевская область",
-            "odessa" to "Одесская область", "poltava" to "Полтавская область", "rivne" to "Ровенская область", "sumy" to "Сумская область",
-            "ternopil" to "Тернопольская область", "vinnytsia" to "Винницкая область", "volyn" to "Волынская область",
-            "zakarpattia" to "Закарпатская область", "zaporizhia" to "Запорожская область", "zhytomyr" to "Житомирская область",
+        val RegionNames: Map<String, String> get() = mapOf(
+            "cherkasy" to tr("Черкаська область", "Черкасская область"), "chernihiv" to tr("Чернігівська область", "Черниговская область"), "chernivtsi" to tr("Чернівецька область", "Черновицкая область"),
+            "crimea" to tr("АР Крим", "АР Крым"), "dnipropetrovsk" to tr("Дніпропетровська область", "Днепропетровская область"), "donetsk" to tr("Донецька область", "Донецкая область"),
+            "ivano-frankivsk" to tr("Івано-Франківська область", "Ивано-Франковская область"), "kharkiv" to tr("Харківська область", "Харьковская область"), "kherson" to tr("Херсонська область", "Херсонская область"),
+            "khmelnytskyi" to tr("Хмельницька область", "Хмельницкая область"), "kirovohrad" to tr("Кіровоградська область", "Кировоградская область"), "kyiv" to tr("Київська область", "Киевская область"),
+            "kyiv-city" to tr("Київ", "Киев"), "luhansk" to tr("Луганська область", "Луганская область"), "lviv" to tr("Львівська область", "Львовская область"), "mykolaiv" to tr("Миколаївська область", "Николаевская область"),
+            "odessa" to tr("Одеська область", "Одесская область"), "poltava" to tr("Полтавська область", "Полтавская область"), "rivne" to tr("Рівненська область", "Ровенская область"), "sumy" to tr("Сумська область", "Сумская область"),
+            "ternopil" to tr("Тернопільська область", "Тернопольская область"), "vinnytsia" to tr("Вінницька область", "Винницкая область"), "volyn" to tr("Волинська область", "Волынская область"),
+            "zakarpattia" to tr("Закарпатська область", "Закарпатская область"), "zaporizhia" to tr("Запорізька область", "Запорожская область"), "zhytomyr" to tr("Житомирська область", "Житомирская область"),
         )
     }
 }
 
 fun java.time.DayOfWeek.ruShort(): String = when (this) {
-    java.time.DayOfWeek.MONDAY -> "Пн"; java.time.DayOfWeek.TUESDAY -> "Вт"; java.time.DayOfWeek.WEDNESDAY -> "Ср"
-    java.time.DayOfWeek.THURSDAY -> "Чт"; java.time.DayOfWeek.FRIDAY -> "Пт"; java.time.DayOfWeek.SATURDAY -> "Сб"
-    java.time.DayOfWeek.SUNDAY -> "Вс"
+    java.time.DayOfWeek.MONDAY -> tr("Пн", "Пн"); java.time.DayOfWeek.TUESDAY -> tr("Вт", "Вт"); java.time.DayOfWeek.WEDNESDAY -> tr("Ср", "Ср")
+    java.time.DayOfWeek.THURSDAY -> tr("Чт", "Чт"); java.time.DayOfWeek.FRIDAY -> tr("Пт", "Пт"); java.time.DayOfWeek.SATURDAY -> tr("Сб", "Сб")
+    java.time.DayOfWeek.SUNDAY -> tr("Нд", "Вс")
 }
 
 fun java.time.DayOfWeek.ruLong(): String = when (this) {
-    java.time.DayOfWeek.MONDAY -> "Понедельник"; java.time.DayOfWeek.TUESDAY -> "Вторник"; java.time.DayOfWeek.WEDNESDAY -> "Среда"
-    java.time.DayOfWeek.THURSDAY -> "Четверг"; java.time.DayOfWeek.FRIDAY -> "Пятница"; java.time.DayOfWeek.SATURDAY -> "Суббота"
-    java.time.DayOfWeek.SUNDAY -> "Воскресенье"
+    java.time.DayOfWeek.MONDAY -> tr("Понеділок", "Понедельник"); java.time.DayOfWeek.TUESDAY -> tr("Вівторок", "Вторник"); java.time.DayOfWeek.WEDNESDAY -> tr("Середа", "Среда")
+    java.time.DayOfWeek.THURSDAY -> tr("Четвер", "Четверг"); java.time.DayOfWeek.FRIDAY -> tr("П'ятниця", "Пятница"); java.time.DayOfWeek.SATURDAY -> tr("Субота", "Суббота")
+    java.time.DayOfWeek.SUNDAY -> tr("Неділя", "Воскресенье")
 }
 
-private val Months = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
-fun LocalDate.ruDayMonth() = "$dayOfMonth ${Months[monthValue - 1]}"
+private val MonthsRu = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+private val MonthsUk = listOf("січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня")
+fun LocalDate.ruDayMonth() = "$dayOfMonth ${(if (I18n.lang == Lang.Uk) MonthsUk else MonthsRu)[monthValue - 1]}"
 
 fun formatDuration(minutes: Long): String {
     val h = minutes / 60; val m = minutes % 60
     return when {
-        h == 0L -> "$m мин"
-        m == 0L -> "$h ч"
-        else -> "$h ч $m мин"
+        h == 0L -> tr("$m хв", "$m мин")
+        m == 0L -> tr("$h год", "$h ч")
+        else -> tr("$h год $m хв", "$h ч $m мин")
     }
 }
 
 fun formatShort(minutes: Int?): String {
     if (minutes == null) return "—"
     val h = minutes / 60; val m = minutes % 60
-    return if (h == 0) "$m м" else "$h ч %02d м".format(m)
+    return if (h == 0) tr("$m хв", "$m м") else tr("$h год %02d хв", "$h ч %02d м").format(m)
 }
 
 fun between(a: LocalDateTime, b: LocalDateTime) = Duration.between(a, b).toMinutes().coerceAtLeast(0)
@@ -210,7 +213,11 @@ fun LocalDateTime.hm(): String = "%02d:%02d".format(hour, minute)
 /** Загрузка карт из assets. Контуры домов: © участники OpenStreetMap (ODbL). Карта областей: @svg-maps/ukraine (CC BY 4.0). */
 object MapAssets {
     @Volatile private var ukraine: UkraineMap? = null
-    @Volatile private var city: CityMap? = null
+    private val cities = mutableMapOf<String, CityMap>()
+
+    /** Города, для которых в тестовой сборке есть карта домов: id → файл в assets. */
+    val CityFiles = linkedMapOf("kyiv" to "kyiv_pechersk.json", "zaporizhzhia" to "zaporizhzhia_center.json")
+    val CityRegions = mapOf("kyiv-city" to "kyiv", "zaporizhia" to "zaporizhzhia")
 
     fun ukraine(ctx: Context): UkraineMap = ukraine ?: synchronized(this) {
         ukraine ?: run {
@@ -221,9 +228,13 @@ object MapAssets {
         }
     }
 
-    fun city(ctx: Context, queues: List<String>): CityMap = city ?: synchronized(this) {
-        city ?: run {
-            val o = JSONObject(ctx.assets.open("kyiv_pechersk.json").bufferedReader().readText())
+    fun cityIdFor(region: String?): String = CityRegions[region] ?: "kyiv"
+
+    fun allCities(ctx: Context, queues: List<String>): List<CityMap> = CityFiles.keys.map { city(ctx, queues, it) }
+
+    fun city(ctx: Context, queues: List<String>, id: String = "kyiv"): CityMap = synchronized(this) {
+        cities[id] ?: run {
+            val o = JSONObject(ctx.assets.open(CityFiles[id] ?: CityFiles.getValue("kyiv")).bufferedReader().readText())
             val b = o.getJSONArray("buildings")
             val raw = (0 until b.length()).map { b.getJSONObject(it) }
             fun pts(a: org.json.JSONArray) = FloatArray(a.length()) { a.getDouble(it).toFloat() }
@@ -233,14 +244,17 @@ object MapAssets {
                 val cx = floor(x / 140f).toInt(); val cy = floor(y / 140f).toInt()
                 return abs(cx * 73856093 xor cy * 19349663)
             }
-            val home = tmp.firstOrNull { it.address == HOME_ADDRESS }
-            val shift = if (home != null) (queues.indexOf("3.1") - cellHash(home.cx, home.cy) % queues.size + queues.size) % queues.size else 0
+            val homeAddr = o.optString("home")
+            val homeQueue = if (id == "kyiv") "3.1" else "4.2"
+            val home = tmp.firstOrNull { it.address == homeAddr }
+            val shift = if (home != null) (queues.indexOf(homeQueue) - cellHash(home.cx, home.cy) % queues.size + queues.size) % queues.size else 0
             val buildings = tmp.map { if (it.critical) it else it.copy(queue = queues[(cellHash(it.cx, it.cy) + shift) % queues.size]) }
             val l = o.getJSONArray("lines")
             val lines = (0 until l.length()).map { l.getJSONObject(it) }.map { MapLine(it.getString("k"), pts(it.getJSONArray("p")), it.optString("n").ifEmpty { null }) }
             val minX = buildings.minOf { it.minX }; val minY = buildings.minOf { it.minY }
             val maxX = buildings.maxOf { it.maxX }; val maxY = buildings.maxOf { it.maxY }
-            CityMap(o.getString("city"), o.getString("district"), buildings, lines, minX, minY, maxX, maxY).also { city = it }
+            CityMap(id, o.getString("region"), o.getString("city"), o.getString("city_ru"), o.getString("district"), o.getString("district_ru"), homeAddr,
+                buildings, lines, minX, minY, maxX, maxY).also { cities[id] = it }
         }
     }
 

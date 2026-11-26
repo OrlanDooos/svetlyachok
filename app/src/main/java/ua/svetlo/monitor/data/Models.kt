@@ -4,25 +4,31 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /** Вид отключения. Цвет задаётся в UI (см. [ua.svetlo.monitor.ui.components.color]). */
-enum class OutageType(val title: String, val short: String) {
-    None("Без отключений", "Нет"),
-    Stabilization("Стабилизационные", "Стабилиз."),
-    Emergency("Аварийные", "Аварийные"),
-    Blackout("Блэкаут", "Блэкаут"),
-    Planned("Плановые работы", "Плановые"),
-    LocalFault("Локальная авария", "Локальная"),
-    NoData("Нет данных", "Нет данных"),
+enum class OutageType(private val titleUk: String, private val titleRu: String, private val shortUk: String, private val shortRu: String) {
+    None("Без відключень", "Без отключений", "Ні", "Нет"),
+    Stabilization("Стабілізаційні", "Стабилизационные", "Стабіліз.", "Стабилиз."),
+    Emergency("Аварійні", "Аварийные", "Аварійні", "Аварийные"),
+    Blackout("Блекаут", "Блэкаут", "Блекаут", "Блэкаут"),
+    Planned("Планові роботи", "Плановые работы", "Планові", "Плановые"),
+    LocalFault("Локальна аварія", "Локальная авария", "Локальна", "Локальная"),
+    NoData("Немає даних", "Нет данных", "Немає даних", "Нет данных");
+
+    val title: String get() = tr(titleUk, titleRu)
+    val short: String get() = tr(shortUk, shortRu)
 }
 
 /** Состояние получасового слота графика. */
 enum class Slot { On, Off, Maybe }
 
 /** Сценарий тестовых данных. В рабочей версии режим приходит с сервера. */
-enum class Scenario(val title: String, val hint: String) {
-    Normal("Обычный день", "Действуют графики стабилизационных отключений"),
-    Emergency("Аварийные", "В Киеве аварийные отключения, графики не действуют"),
-    Blackout("Блэкаут", "Масштабное отключение по области"),
-    Calm("Без отключений", "Графики не применяются"),
+enum class Scenario(private val titleUk: String, private val titleRu: String, private val hintUk: String, private val hintRu: String) {
+    Normal("Звичайний день", "Обычный день", "Діють графіки стабілізаційних відключень", "Действуют графики стабилизационных отключений"),
+    Emergency("Аварійні", "Аварийные", "У Києві аварійні відключення, графіки не діють", "В Киеве аварийные отключения, графики не действуют"),
+    Blackout("Блекаут", "Блэкаут", "Масштабне відключення по області", "Масштабное отключение по области"),
+    Calm("Без відключень", "Без отключений", "Графіки не застосовуються", "Графики не применяются");
+
+    val title: String get() = tr(titleUk, titleRu)
+    val hint: String get() = tr(hintUk, hintRu)
 }
 
 data class DaySchedule(
@@ -54,7 +60,14 @@ data class Address(
     val city: String,
     val region: String,
     val queue: String,
-)
+) {
+    /** Название города на языке интерфейса. Адреса храним по-украински, как в реестрах. */
+    val cityName: String get() = if (I18n.lang == Lang.Uk) city else CityRu[city] ?: city
+    /** Стандартные подписи переводим, свои подписи пользователя показываем как есть. */
+    val labelName: String get() = when (label) { "Дім", "Дом" -> tr("Дім", "Дом"); else -> label }
+}
+
+private val CityRu = mapOf("Київ" to "Киев", "Запоріжжя" to "Запорожье", "Бровари" to "Бровары", "Львів" to "Львов", "Киев" to "Киев", "Львов" to "Львов", "Бровары" to "Бровары")
 
 /** Что показывать на главном экране прямо сейчас. */
 data class NowState(
@@ -140,12 +153,18 @@ data class Building(
 data class MapLine(val kind: String, val points: FloatArray, val name: String?)
 
 data class CityMap(
-    val city: String,
-    val district: String,
+    val id: String,
+    val region: String,
+    val cityUk: String, val cityRu: String,
+    val districtUk: String, val districtRu: String,
+    val homeAddress: String,
     val buildings: List<Building>,
     val lines: List<MapLine>,
     val minX: Float, val minY: Float, val maxX: Float, val maxY: Float,
-)
+) {
+    val city: String get() = tr(cityUk, cityRu)
+    val district: String get() = tr(districtUk, districtRu)
+}
 
 data class Region(val id: String, val name: String, val pathData: String)
 

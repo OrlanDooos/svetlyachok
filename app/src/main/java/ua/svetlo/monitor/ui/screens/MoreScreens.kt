@@ -1,5 +1,8 @@
 package ua.svetlo.monitor.ui.screens
 
+import ua.svetlo.monitor.data.tr
+import ua.svetlo.monitor.data.Lang
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -105,8 +108,8 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
         ) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Status.Yellow), contentAlignment = Alignment.Center) { Icon(Bolt, null, tint = Color(0xFF16181D)) }
             Column(Modifier.weight(1f)) {
-                Text("Светлячок Premium", style = Type.bodyBold.copy(fontWeight = FontWeight.ExtraBold, fontSize = 16.sp), color = Color.White)
-                Text("Без рекламы, больше адресов, виджеты", style = Type.small, color = Color(0xFFC9CCD3))
+                Text(tr("Світлячок Premium", "Светлячок Premium"), style = Type.bodyBold.copy(fontWeight = FontWeight.ExtraBold, fontSize = 16.sp), color = Color.White)
+                Text(tr("Без реклами, більше адрес, віджети", "Без рекламы, больше адресов, виджеты"), style = Type.small, color = Color(0xFFC9CCD3))
             }
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Color.White)
         }
@@ -114,11 +117,11 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
     val tools: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(horizontal = 16.dp, vertical = 2.dp)) {
             val rows = listOf(
-                Triple("Мои адреса", "${s.addresses.size}", Routes.Addresses) to (Icons.Rounded.Home to (Status.Green to c.greenSoft)),
-                Triple("Свет по факту и датчик", "", Routes.Report) to (Icons.Rounded.Groups to (c.accent to c.accentSoft)),
-                Triple("Окна света", "сегодня", Routes.Windows) to (Bolt to (Status.Yellow to c.yellowSoft)),
-                Triple("Энергосистема Украины", "дефицит", Routes.Grid) to (Icons.Rounded.ElectricBolt to (Status.Red to c.redSoft)),
-                Triple("Виджеты", "", Routes.Widgets) to (Icons.Rounded.Widgets to (Status.Blue to Color(0x223B82F6))),
+                Triple(tr("Мої адреси", "Мои адреса"), "${s.addresses.size}", Routes.Addresses) to (Icons.Rounded.Home to (Status.Green to c.greenSoft)),
+                Triple(tr("Світло за фактом і датчик", "Свет по факту и датчик"), "", Routes.Report) to (Icons.Rounded.Groups to (c.accent to c.accentSoft)),
+                Triple(tr("Вікна світла", "Окна света"), tr("сьогодні", "сегодня"), Routes.Windows) to (Bolt to (Status.Yellow to c.yellowSoft)),
+                Triple(tr("Енергосистема України", "Энергосистема Украины"), tr("дефіцит", "дефицит"), Routes.Grid) to (Icons.Rounded.ElectricBolt to (Status.Red to c.redSoft)),
+                Triple(tr("Віджети", "Виджеты"), "", Routes.Widgets) to (Icons.Rounded.Widgets to (Status.Blue to Color(0x223B82F6))),
             )
             rows.forEachIndexed { i, (r, ic) ->
                 NavRow(r.first, r.second.ifEmpty { null }, divider = i < rows.lastIndex, leading = { IconTile(ic.first, ic.second.first, ic.second.second, 32.dp) }) { nav(r.third) }
@@ -127,23 +130,27 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
     }
     val settings: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(horizontal = 16.dp, vertical = 2.dp)) {
-            NavRow("Уведомления", if (s.remindMinutes > 0) "за ${s.remindMinutes} мин" else "выкл.") { nav(Routes.Notif) }
-            NavRow("Язык", "Русский", divider = true) {}
+            NavRow(tr("Сповіщення", "Уведомления"), if (s.remindMinutes > 0) tr("за ${s.remindMinutes} хв", "за ${s.remindMinutes} мин") else tr("вимк.", "выкл.")) { nav(Routes.Notif) }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
             Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Тема", style = Type.bodyBold, color = c.ink)
-                Segmented(listOf("Системная", "Светлая", "Тёмная"), s.theme.ordinal, { i -> update { it.copy(theme = ThemeMode.entries[i]) } }, Modifier.fillMaxWidth())
+                Text(tr("Мова", "Язык"), style = Type.bodyBold, color = c.ink)
+                Segmented(listOf("Українська", "Русский"), s.lang.ordinal, { i -> update { it.copy(lang = Lang.entries[i]) } }, Modifier.fillMaxWidth())
+            }
+            Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("Тема", "Тема"), style = Type.bodyBold, color = c.ink)
+                Segmented(listOf(tr("Системна", "Системная"), tr("Світла", "Светлая"), tr("Темна", "Тёмная")), s.theme.ordinal, { i -> update { it.copy(theme = ThemeMode.entries[i]) } }, Modifier.fillMaxWidth())
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
-            ToggleRow("Крупный шрифт", "Упрощённая главная, крупные кнопки", s.largeText, { on -> update { it.copy(largeText = on) } })
+            ToggleRow(tr("Великий шрифт", "Крупный шрифт"), tr("Спрощена головна, великі кнопки", "Упрощённая главная, крупные кнопки"), s.largeText, { on -> update { it.copy(largeText = on) } })
         }
     }
     val demo: @Composable () -> Unit = {
         SCard(Modifier.fillMaxWidth(), radius = 22.dp) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Тестовые данные", style = Type.section, color = c.ink, modifier = Modifier.weight(1f))
-                Pill("тестовая сборка", bg = c.yellowSoft, fg = c.yellowInk, border = null)
+                Text(tr("Тестові дані", "Тестовые данные"), style = Type.section, color = c.ink, modifier = Modifier.weight(1f))
+                Pill(tr("тестова збірка", "тестовая сборка"), bg = c.yellowSoft, fg = c.yellowInk, border = null)
             }
-            Text("Переключите ситуацию, чтобы посмотреть, как приложение ведёт себя в разные дни.", style = Type.small, color = c.ink2)
+            Text(tr("Перемкніть ситуацію, щоб побачити, як застосунок поводиться в різні дні.", "Переключите ситуацию, чтобы посмотреть, как приложение ведёт себя в разные дни."), style = Type.small, color = c.ink2)
             Scenario.entries.forEach { sc ->
                 val on = sc == s.scenario
                 Row(
@@ -161,19 +168,19 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
                 }
             }
         }
-        Text("Карта областей: @svg-maps/ukraine (CC BY 4.0). Контуры домов: © участники OpenStreetMap (ODbL). Шрифты Onest и Manrope (OFL).",
+        Text(tr("Мапа областей: @svg-maps/ukraine (CC BY 4.0). Контури будинків: © учасники OpenStreetMap (ODbL). Шрифти Onest і Manrope (OFL).", "Карта областей: @svg-maps/ukraine (CC BY 4.0). Контуры домов: © участники OpenStreetMap (ODbL). Шрифты Onest и Manrope (OFL)."),
             style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
     }
     if (w.twoPane) {
         Row(Modifier.fillMaxSize().padding(horizontal = w.gutter), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Ещё", style = Type.h1, color = c.ink); premium(); tools()
+                Text(tr("Ще", "Ещё"), style = Type.h1, color = c.ink); premium(); tools()
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.height(30.dp)); settings(); demo()
             }
         }
-    } else ScreenColumn { Text("Ещё", style = Type.h1, color = c.ink); premium(); tools(); settings(); demo() }
+    } else ScreenColumn { Text(tr("Ще", "Ещё"), style = Type.h1, color = c.ink); premium(); tools(); settings(); demo() }
 }
 
 @Composable
@@ -181,7 +188,7 @@ fun AddressesScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onB
     val c = Svetlo.colors
     var adding by remember { mutableStateOf(false) }
     ScreenColumn {
-        BackHeader("Мои адреса", "Свет у вас и у близких", onBack)
+        BackHeader(tr("Мої адреси", "Мои адреса"), tr("Світло у вас і в близьких", "Свет у вас и у близких"), onBack)
         s.addresses.forEach { a ->
             val st = repo.now(a.queue, now, s.scenario)
             val on = a.id == s.selectedId
@@ -193,31 +200,31 @@ fun AddressesScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onB
                         Icon(if (st.lightOn) Bolt else BoltOff, null, tint = if (col == Status.Yellow) Color(0xFF16181D) else Color.White)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(a.label, style = Type.bodyBold, color = c.ink)
-                        Text("${a.city} · ${a.street.shortStreet()} · ${a.queue}", style = Type.small, color = c.muted)
+                        Text(a.labelName, style = Type.bodyBold, color = c.ink)
+                        Text("${a.cityName} · ${a.street.shortStreet()} · ${a.queue}", style = Type.small, color = c.muted)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(if (st.lightOn) "Свет есть" else "Света нет", style = Type.smallBold, color = c.ink)
-                        Text(st.nextChange?.let { (if (st.lightOn) "до " else "включат ") + it.hm() } ?: if (st.schedulesSuspended) "аварийные" else "без отключений", style = Type.caption, color = c.muted)
+                        Text(if (st.lightOn) tr("Світло є", "Свет есть") else tr("Світла немає", "Света нет"), style = Type.smallBold, color = c.ink)
+                        Text(st.nextChange?.let { (if (st.lightOn) tr("до ", "до ") else tr("увімкнуть ", "включат ")) + it.hm() } ?: if (st.schedulesSuspended) tr("аварійні", "аварийные") else tr("без відключень", "без отключений"), style = Type.caption, color = c.muted)
                     }
                 }
                 if (s.addresses.size > 1 && a.id != "home") {
                     Row(Modifier.clip(RoundedCornerShape(10.dp)).clickable { update { st2 -> st2.copy(addresses = st2.addresses.filter { it.id != a.id }) } }.padding(4.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Rounded.Delete, null, tint = c.muted, modifier = Modifier.size(16.dp)); Text("Удалить", style = Type.caption, color = c.muted)
+                        Icon(Icons.Rounded.Delete, null, tint = c.muted, modifier = Modifier.size(16.dp)); Text(tr("Видалити", "Удалить"), style = Type.caption, color = c.muted)
                     }
                 }
             }
         }
         if (adding) {
             AddressPicker(repo) { addr ->
-                update { it.copy(addresses = it.addresses + addr.copy(id = "a" + System.currentTimeMillis(), label = "Адрес ${it.addresses.size + 1}")) }
+                update { it.copy(addresses = it.addresses + addr.copy(id = "a" + System.currentTimeMillis(), label = tr("Адреса ${it.addresses.size + 1}", "Адрес ${it.addresses.size + 1}"))) }
                 adding = false
             }
         } else {
-            PrimaryButton("+ Добавить адрес", { adding = true }, Modifier.fillMaxWidth(), outlined = true)
+            PrimaryButton(tr("+ Додати адресу", "+ Добавить адрес"), { adding = true }, Modifier.fillMaxWidth(), outlined = true)
         }
-        Text("В бесплатной версии до 3 адресов. В Premium без ограничений.", style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
+        Text(tr("У безкоштовній версії до 3 адрес. У Premium без обмежень.", "В бесплатной версии до 3 адресов. В Premium без ограничений."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
     }
 }
 
@@ -225,21 +232,21 @@ fun AddressesScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onB
 @Composable
 fun AddressPicker(repo: OutageRepository, onPick: (Address) -> Unit) {
     val ctx = LocalContext.current
-    val city = remember { MapAssets.city(ctx, repo.queues) }
+    val cities = remember { MapAssets.allCities(ctx, repo.queues) }
     val c = Svetlo.colors
     var q by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SearchField(q, { q = it }, "Улица и номер дома")
-        val found = if (q.length < 2) emptyList() else city.buildings.filter { it.queue != null && it.address?.contains(q.trim(), true) == true }.distinctBy { it.address }.take(6)
-        if (q.length >= 2 && found.isEmpty()) Text("В тестовой базе пока только Печерский район Киева. Попробуйте «Лєскова» или «Мечникова».", style = Type.small, color = c.ink2)
-        found.forEach { b ->
+        SearchField(q, { q = it }, tr("Вулиця і номер будинку", "Улица и номер дома"))
+        val found = if (q.length < 2) emptyList() else cities.flatMap { city -> city.buildings.filter { it.queue != null && it.address?.contains(q.trim(), true) == true }.distinctBy { it.address }.map { city to it } }.take(6)
+        if (q.length >= 2 && found.isEmpty()) Text(tr("У тестовій базі поки є центр Києва (Печерський район) і центр Запоріжжя. Спробуйте «Лєскова» або «Соборний».", "В тестовой базе пока есть центр Киева (Печерский район) и центр Запорожья. Попробуйте «Лєскова» или «Соборний»."), style = Type.small, color = c.ink2)
+        found.forEach { (city, b) ->
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface).clickable { onPick(Address("home", "Дом", b.address!!, "Киев", "kyiv-city", b.queue!!)) }.padding(14.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface).clickable { onPick(Address("home", tr("Дім", "Дом"), b.address!!, city.cityUk, city.region, b.queue!!)) }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(Icons.Rounded.LocationOn, null, tint = c.accent)
-                Text(b.address!!, style = Type.bodyBold, color = c.ink, modifier = Modifier.weight(1f))
-                Pill("очередь ${b.queue}", bg = c.accentSoft, fg = c.accent, border = null)
+                Column(Modifier.weight(1f)) { Text(b.address!!, style = Type.bodyBold, color = c.ink); Text(city.city, style = Type.small, color = c.muted) }
+                Pill(tr("черга ${b.queue}", "очередь ${b.queue}"), bg = c.accentSoft, fg = c.accent, border = null)
             }
         }
     }
@@ -249,28 +256,28 @@ fun AddressPicker(repo: OutageRepository, onPick: (Address) -> Unit) {
 fun NotifScreen(s: Settings, onBack: () -> Unit, update: ((Settings) -> Settings) -> Unit) {
     val c = Svetlo.colors
     ScreenColumn {
-        BackHeader("Уведомления", "Для всех адресов", onBack)
+        BackHeader(tr("Сповіщення", "Уведомления"), tr("Для всіх адрес", "Для всех адресов"), onBack)
         SCard(Modifier.fillMaxWidth()) {
-            Text("Напомнить до отключения", style = Type.section, color = c.ink)
+            Text(tr("Нагадати до відключення", "Напомнить до отключения"), style = Type.section, color = c.ink)
             val opts = listOf(0, 5, 15, 30, 60)
-            Segmented(opts.map { if (it == 0) "Нет" else if (it == 60) "1 ч" else "$it мин" }, opts.indexOf(s.remindMinutes).coerceAtLeast(0), { i -> update { it.copy(remindMinutes = opts[i]) } }, Modifier.fillMaxWidth())
+            Segmented(opts.map { if (it == 0) tr("Ні", "Нет") else if (it == 60) tr("1 год", "1 ч") else tr("$it хв", "$it мин") }, opts.indexOf(s.remindMinutes).coerceAtLeast(0), { i -> update { it.copy(remindMinutes = opts[i]) } }, Modifier.fillMaxWidth())
         }
         SCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 4.dp)) {
-            ToggleRow("График изменился", "Облэнерго опубликовало новый график", s.notifyChanges, { v -> update { it.copy(notifyChanges = v) } })
+            ToggleRow(tr("Графік змінився", "График изменился"), tr("Обленерго опублікувало новий графік", "Облэнерго опубликовало новый график"), s.notifyChanges, { v -> update { it.copy(notifyChanges = v) } })
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
-            ToggleRow("Свет включили", "Сразу после включения", s.notifyPowerBack, { v -> update { it.copy(notifyPowerBack = v) } })
+            ToggleRow(tr("Світло увімкнули", "Свет включили"), tr("Одразу після увімкнення", "Сразу после включения"), s.notifyPowerBack, { v -> update { it.copy(notifyPowerBack = v) } })
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
-            ToggleRow("Аварийные отключения", "Даже в тихие часы", s.notifyEmergency, { v -> update { it.copy(notifyEmergency = v) } })
+            ToggleRow(tr("Аварійні відключення", "Аварийные отключения"), tr("Навіть у тихі години", "Даже в тихие часы"), s.notifyEmergency, { v -> update { it.copy(notifyEmergency = v) } })
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.divider))
-            ToggleRow("Тихие часы 23:00–07:00", "Без звука, кроме аварийных", s.quietNight, { v -> update { it.copy(quietNight = v) } })
+            ToggleRow(tr("Тихі години 23:00–07:00", "Тихие часы 23:00–07:00"), tr("Без звуку, крім аварійних", "Без звука, кроме аварийных"), s.quietNight, { v -> update { it.copy(quietNight = v) } })
         }
         SCard(Modifier.fillMaxWidth()) {
-            Text("Как будет выглядеть", style = Type.section, color = c.ink)
+            Text(tr("Як це виглядатиме", "Как будет выглядеть"), style = Type.section, color = c.ink)
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(c.surface2).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF16181D)), contentAlignment = Alignment.Center) { Icon(Bolt, null, tint = Status.Yellow, modifier = Modifier.size(20.dp)) }
                 Column(Modifier.weight(1f)) {
-                    Text("Через ${s.remindMinutes.takeIf { it > 0 } ?: 15} мин отключат свет", style = Type.bodyBold, color = c.ink)
-                    Text("${s.selected.label} · очередь ${s.selected.queue}. Включат по графику.", style = Type.small, color = c.ink2)
+                    Text(tr("Через ${s.remindMinutes.takeIf { it > 0 } ?: 15} хв відключать світло", "Через ${s.remindMinutes.takeIf { it > 0 } ?: 15} мин отключат свет"), style = Type.bodyBold, color = c.ink)
+                    Text(tr("${s.selected.labelName} · черга ${s.selected.queue}. Увімкнуть за графіком.", "${s.selected.labelName} · очередь ${s.selected.queue}. Включат по графику."), style = Type.small, color = c.ink2)
                 }
             }
         }
@@ -282,20 +289,20 @@ fun GridScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
     val c = Svetlo.colors
     val g = repo.grid(s.scenario)
     ScreenColumn {
-        BackHeader("Энергосистема Украины", "По данным Укрэнерго", onBack)
+        BackHeader(tr("Енергосистема України", "Энергосистема Украины"), tr("За даними Укренерго", "По данным Укрэнерго"), onBack)
         SCard(Modifier.fillMaxWidth()) {
             val bad = g.deficitMw > 0
-            Pill(if (bad) "Дефицит мощности" else "Баланс", bg = if (bad) c.redSoft else c.greenSoft, fg = if (bad) c.redInk else c.greenInk, border = null, dot = if (bad) Status.Red else Status.Green, blink = bad)
-            Text(if (bad) "−%,d МВт".format(java.util.Locale("ru"), g.deficitMw) else "0 МВт", style = Type.bigNumber, color = c.ink)
-            Text("не хватает в часы пик", style = Type.body, color = c.ink2)
+            Pill(if (bad) tr("Дефіцит потужності", "Дефицит мощности") else tr("Баланс", "Баланс"), bg = if (bad) c.redSoft else c.greenSoft, fg = if (bad) c.redInk else c.greenInk, border = null, dot = if (bad) Status.Red else Status.Green, blink = bad)
+            Text(if (bad) tr("−%,d МВт", "−%,d МВт").format(java.util.Locale("ru"), g.deficitMw) else tr("0 МВт", "0 МВт"), style = Type.bigNumber, color = c.ink)
+            Text(tr("бракує в години пік", "не хватает в часы пик"), style = Type.body, color = c.ink2)
             Text(g.message, style = Type.small.copy(lineHeight = 20.sp), color = c.ink2)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ua.svetlo.monitor.ui.components.StatTile("Потребление", "${g.consumptionMw / 1000},${(g.consumptionMw % 1000) / 100} ГВт", modifier = Modifier.weight(1f))
-            ua.svetlo.monitor.ui.components.StatTile("Часы пик", g.peakHours, modifier = Modifier.weight(1f))
+            ua.svetlo.monitor.ui.components.StatTile(tr("Споживання", "Потребление"), tr("${g.consumptionMw / 1000},${(g.consumptionMw % 1000) / 100} ГВт", "${g.consumptionMw / 1000},${(g.consumptionMw % 1000) / 100} ГВт"), modifier = Modifier.weight(1f))
+            ua.svetlo.monitor.ui.components.StatTile(tr("Години пік", "Часы пик"), g.peakHours, modifier = Modifier.weight(1f))
         }
         SCard(Modifier.fillMaxWidth()) {
-            SectionHeader("Регионы с графиками", "${g.regionsWithSchedules} из 24")
+            SectionHeader(tr("Регіони з графіками", "Регионы с графиками"), tr("${g.regionsWithSchedules} з 24", "${g.regionsWithSchedules} из 24"))
             val regs = repo.regions(s.scenario).filter { it.type != OutageType.NoData }
             Row(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape)) {
                 OutageType.entries.forEach { t ->
@@ -305,7 +312,7 @@ fun GridScreen(repo: OutageRepository, s: Settings, onBack: () -> Unit) {
             }
         }
         SCard(Modifier.fillMaxWidth()) {
-            SectionHeader("Как помочь энергосистеме")
+            SectionHeader(tr("Як допомогти енергосистемі", "Как помочь энергосистеме"))
             g.savingTips.forEach { t -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Dot(c.accent); Text(t, style = Type.body, color = c.ink) } }
         }
     }
@@ -318,18 +325,18 @@ fun ReportScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBack
     var sensor by remember { mutableStateOf(false) }
     val st = repo.now(s.selected.queue, now, s.scenario)
     ScreenColumn {
-        BackHeader("Свет по факту", "${s.selected.label} · ${s.selected.street.shortStreet()}", onBack)
+        BackHeader(tr("Світло за фактом", "Свет по факту"), "${s.selected.labelName} · ${s.selected.street.shortStreet()}", onBack)
         SCard(Modifier.fillMaxWidth()) {
-            Text("Статус по умолчанию задаёт график", style = Type.section, color = c.ink)
-            Text("Отметки соседей и датчики учитываются только при аварийных отключениях и блэкауте, когда график не действует. Они помогают понять, где свет уже вернули.",
+            Text(tr("Статус за замовчуванням задає графік", "Статус по умолчанию задаёт график"), style = Type.section, color = c.ink)
+            Text(tr("Позначки сусідів і датчики враховуються лише під час аварійних відключень і блекауту, коли графік не діє. Вони допомагають зрозуміти, де світло вже повернули.", "Отметки соседей и датчики учитываются только при аварийных отключениях и блэкауте, когда график не действует. Они помогают понять, где свет уже вернули."),
                 style = Type.small.copy(lineHeight = 20.sp), color = c.ink2)
-            if (st.factReports != null) Pill("Сейчас аварийный режим · ${st.factReports} отметок рядом", bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
-            else Pill("Сейчас действует график · отметки не нужны", bg = c.greenSoft, fg = c.greenInk, border = null, dot = Status.Green)
+            if (st.factReports != null) Pill(tr("Зараз аварійний режим · ${st.factReports} позначок поруч", "Сейчас аварийный режим · ${st.factReports} отметок рядом"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
+            else Pill(tr("Зараз діє графік · позначки не потрібні", "Сейчас действует график · отметки не нужны"), bg = c.greenSoft, fg = c.greenInk, border = null, dot = Status.Green)
         }
         SCard(Modifier.fillMaxWidth()) {
-            Text("Что у вас сейчас?", style = Type.section, color = c.ink)
+            Text(tr("Що у вас зараз?", "Что у вас сейчас?"), style = Type.section, color = c.ink)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf("Свет есть" to Status.Green, "Света нет" to Status.Black).forEachIndexed { i, (t, col) ->
+                listOf(tr("Світло є", "Свет есть") to Status.Green, tr("Світла немає", "Света нет") to Status.Black).forEachIndexed { i, (t, col) ->
                     val on = sent == i
                     Column(
                         Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (on) col else c.surface2).clickable { sent = i }.padding(vertical = 18.dp),
@@ -340,17 +347,17 @@ fun ReportScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBack
                     }
                 }
             }
-            if (sent >= 0) Text("Спасибо! Отметка анонимная и видна соседям 15 минут.", style = Type.small, color = c.greenInk)
+            if (sent >= 0) Text(tr("Дякуємо! Позначка анонімна й видима сусідам 15 хвилин.", "Спасибо! Отметка анонимная и видна соседям 15 минут."), style = Type.small, color = c.greenInk)
         }
         SCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
                 ua.svetlo.monitor.ui.components.IconTile(Icons.Rounded.BatteryChargingFull, c.accent, c.accentSoft)
                 Column(Modifier.weight(1f)) {
-                    Text("Датчик «телефон на зарядке»", style = Type.bodyBold, color = c.ink)
-                    Text("Старый телефон дома на зарядке сам сообщит, когда пропадёт питание", style = Type.small, color = c.muted)
+                    Text(tr("Датчик «телефон на зарядці»", "Датчик «телефон на зарядке»"), style = Type.bodyBold, color = c.ink)
+                    Text(tr("Старий телефон удома на зарядці сам повідомить, коли зникне живлення", "Старый телефон дома на зарядке сам сообщит, когда пропадёт питание"), style = Type.small, color = c.muted)
                 }
             }
-            ToggleRow("Этот телефон — датчик", null, sensor, { sensor = it })
+            ToggleRow(tr("Цей телефон — датчик", "Этот телефон — датчик"), null, sensor, { sensor = it })
         }
     }
 }
@@ -367,8 +374,8 @@ fun PremiumScreen(onClose: () -> Unit) {
         ) {
             Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF1A1C22)).clickable(onClickLabel = "Закрыть", onClick = onClose), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Close, "Закрыть", tint = Color(0xFFF2F2F4))
+                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF1A1C22)).clickable(onClickLabel = tr("Закрити", "Закрыть"), onClick = onClose), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Close, tr("Закрити", "Закрыть"), tint = Color(0xFFF2F2F4))
                     }
                 }
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -378,17 +385,17 @@ fun PremiumScreen(onClose: () -> Unit) {
                             Icon(Bolt, null, tint = Status.Yellow, modifier = Modifier.size(42.dp))
                         }
                     }
-                    Text("Светлячок Premium", style = Type.display.copy(fontWeight = FontWeight.ExtraBold), color = Color(0xFFF2F2F4), textAlign = TextAlign.Center)
-                    Text("Всё о свете у вас и у близких, без рекламы", style = Type.body, color = Color(0xFFC9CCD3), textAlign = TextAlign.Center)
+                    Text(tr("Світлячок Premium", "Светлячок Premium"), style = Type.display.copy(fontWeight = FontWeight.ExtraBold), color = Color(0xFFF2F2F4), textAlign = TextAlign.Center)
+                    Text(tr("Усе про світло у вас і в близьких, без реклами", "Всё о свете у вас и у близких, без рекламы"), style = Type.body, color = Color(0xFFC9CCD3), textAlign = TextAlign.Center)
                 }
-                listOf("Без рекламы", "Неограниченно адресов", "Все виджеты и живое уведомление", "Интеграция с инвертором и зарядной станцией", "История и статистика за год").forEach { p ->
+                listOf(tr("Без реклами", "Без рекламы"), tr("Необмежено адрес", "Неограниченно адресов"), tr("Усі віджети й живе сповіщення", "Все виджеты и живое уведомление"), tr("Інтеграція з інвертором і зарядною станцією", "Интеграция с инвертором и зарядной станцией"), tr("Історія і статистика за рік", "История и статистика за год")).forEach { p ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF24233F)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, tint = Color(0xFFB3AFFF), modifier = Modifier.size(18.dp)) }
                         Text(p, style = Type.body.copy(fontWeight = FontWeight.SemiBold), color = Color(0xFFF2F2F4))
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf("Месяц", "Год").forEachIndexed { i, t ->
+                    listOf(tr("Місяць", "Месяц"), tr("Рік", "Год")).forEachIndexed { i, t ->
                         val on = plan == i
                         Column(
                             Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (on) Color(0xFF24233F) else Color(0xFF1A1C22))
@@ -398,14 +405,14 @@ fun PremiumScreen(onClose: () -> Unit) {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(t, style = Type.smallBold, color = if (on) Color(0xFFC9C6FF) else Color(0xFFA0A4AE), modifier = Modifier.weight(1f))
-                                if (i == 1) Pill("Выгоднее", bg = Status.Yellow, fg = Color(0xFF16181D), border = null, style = Type.tiny.copy(fontWeight = FontWeight.ExtraBold))
+                                if (i == 1) Pill(tr("Вигідніше", "Выгоднее"), bg = Status.Yellow, fg = Color(0xFF16181D), border = null, style = Type.tiny.copy(fontWeight = FontWeight.ExtraBold))
                             }
-                            Text("[ЦЕНА] ₴", style = Type.number.copy(fontSize = 20.sp), color = Color(0xFFF2F2F4))
+                            Text(tr("[ЦІНА] ₴", "[ЦЕНА] ₴"), style = Type.number.copy(fontSize = 20.sp), color = Color(0xFFF2F2F4))
                         }
                     }
                 }
-                PrimaryButton("Оформить Premium", {}, Modifier.fillMaxWidth().heightIn(min = 56.dp), bg = Status.Yellow, fg = Color(0xFF16181D))
-                Text("Основные функции бесплатны всегда. В тестовой сборке оплата отключена.", style = Type.caption.copy(fontWeight = FontWeight.Medium), color = Color(0xFFA0A4AE), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                PrimaryButton(tr("Оформити Premium", "Оформить Premium"), {}, Modifier.fillMaxWidth().heightIn(min = 56.dp), bg = Status.Yellow, fg = Color(0xFF16181D))
+                Text(tr("Основні функції завжди безкоштовні. У тестовій збірці оплату вимкнено.", "Основные функции бесплатны всегда. В тестовой сборке оплата отключена."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = Color(0xFFA0A4AE), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -419,20 +426,20 @@ fun WidgetsScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBac
     val today = repo.schedule(s.selected.queue, now.toLocalDate(), s.scenario)
     val green = st.lightOn
     ScreenColumn {
-        BackHeader("Виджеты", "Скоро на главном экране телефона", onBack)
-        Text("Так будут выглядеть виджеты. В тестовой сборке их пока нельзя добавить на рабочий стол.", style = Type.small, color = c.ink2)
+        BackHeader(tr("Віджети", "Виджеты"), tr("Незабаром на головному екрані телефона", "Скоро на главном экране телефона"), onBack)
+        Text(tr("Так виглядатимуть віджети. У тестовій збірці їх поки не можна додати на робочий стіл.", "Так будут выглядеть виджеты. В тестовой сборке их пока нельзя добавить на рабочий стол."), style = Type.small, color = c.ink2)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.size(160.dp).clip(RoundedCornerShape(26.dp)).background(if (green) Status.Green else Status.Black).padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Icon(if (green) Bolt else BoltOff, null, tint = Color.White, modifier = Modifier.size(28.dp))
                 Column {
-                    Text(if (green) "Свет есть" else "Света нет", style = Type.h2, color = Color.White)
-                    Text(st.nextChange?.let { (if (green) "до " else "включат в ") + it.hm() } ?: "", style = Type.smallBold, color = Color.White.copy(alpha = 0.85f))
+                    Text(if (green) tr("Світло є", "Свет есть") else tr("Світла немає", "Света нет"), style = Type.h2, color = Color.White)
+                    Text(st.nextChange?.let { (if (green) tr("до ", "до ") else tr("увімкнуть о ", "включат в ")) + it.hm() } ?: "", style = Type.smallBold, color = Color.White.copy(alpha = 0.85f))
                 }
             }
             Column(Modifier.widthIn(min = 280.dp).weight(1f).height(160.dp).clip(RoundedCornerShape(26.dp)).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Dot(if (green) Status.Green else Status.Yellow, 10.dp)
-                    Text("${s.selected.label} · ${s.selected.queue}", style = Type.bodyBold, color = c.ink, modifier = Modifier.weight(1f))
+                    Text("${s.selected.labelName} · ${s.selected.queue}", style = Type.bodyBold, color = c.ink, modifier = Modifier.weight(1f))
                     Text(st.nextChange?.let { formatDuration(between(now, it)) } ?: "", style = Type.smallBold, color = c.ink2)
                 }
                 DayBar(today.slots, height = 26.dp, nowFraction = (now.hour * 60 + now.minute) / 1440f)

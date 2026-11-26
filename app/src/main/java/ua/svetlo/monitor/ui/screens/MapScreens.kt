@@ -1,5 +1,7 @@
 package ua.svetlo.monitor.ui.screens
 
+import ua.svetlo.monitor.data.tr
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -87,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ua.svetlo.monitor.data.Building
+import ua.svetlo.monitor.data.CityMap
 import ua.svetlo.monitor.data.MapAssets
 import ua.svetlo.monitor.data.OutageRepository
 import ua.svetlo.monitor.data.OutageType
@@ -120,7 +123,7 @@ import kotlin.math.min
 private class RegionShape(val id: String, val path: Path, val bounds: android.graphics.RectF, val region: android.graphics.Region)
 
 @Composable
-fun MapUkraineScreen(repo: OutageRepository, s: Settings, onCity: () -> Unit) {
+fun MapUkraineScreen(repo: OutageRepository, s: Settings, onCity: (String) -> Unit) {
     val ctx = LocalContext.current
     val map = remember { MapAssets.ukraine(ctx) }
     val shapes = remember(map) {
@@ -132,33 +135,35 @@ fun MapUkraineScreen(repo: OutageRepository, s: Settings, onCity: () -> Unit) {
         }.sortedBy { if (it.id == "kyiv-city") 1 else 0 }
     }
     val statuses = repo.regions(s.scenario).associateBy { it.id }
-    var selected by remember { mutableStateOf<String?>("kyiv-city") }
+    var selected by remember { mutableStateOf<String?>(s.selected.region.takeIf { r -> r in MapAssets.CityRegions } ?: "kyiv-city") }
     var query by remember { mutableStateOf("") }
     var showAll by remember { mutableStateOf(false) }
     val w = LocalWindow.current
 
     val search: @Composable () -> Unit = {
-        SearchField(query, { query = it }, "Город, область или адрес")
-        Segmented(listOf("Украина", "Мой город"), 0, { if (it == 1) onCity() }, Modifier.fillMaxWidth())
+        SearchField(query, { query = it }, tr("Місто, область або адреса", "Город, область или адрес"))
+        Segmented(listOf(tr("Україна", "Украина"), tr("Моє місто", "Мой город")), 0, { if (it == 1) onCity(MapAssets.cityIdFor(s.selected.region)) }, Modifier.fillMaxWidth())
     }
     val mapCard: @Composable () -> Unit = {
         SCard(padding = PaddingValues(10.dp)) {
             UkraineCanvas(map.width, map.height, shapes, statuses, selected) { id ->
-                if (id == "kyiv-city" && selected == "kyiv-city") onCity() else selected = id
+                if (id in MapAssets.CityRegions && selected == id) onCity(MapAssets.cityIdFor(id)) else selected = id
             }
             FlowRow(Modifier.padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LegendItem(Status.Green, "Нет"); LegendItem(Status.Yellow, "Стабилиз."); LegendItem(Status.Red, "Аварийные")
-                LegendItem(Status.Black, "Блэкаут"); LegendItem(Status.NoData, "Нет данных")
+                LegendItem(Status.Green, tr("Ні", "Нет")); LegendItem(Status.Yellow, tr("Стабіліз.", "Стабилиз.")); LegendItem(Status.Red, tr("Аварійні", "Аварийные"))
+                LegendItem(Status.Black, tr("Блекаут", "Блэкаут")); LegendItem(Status.NoData, tr("Немає даних", "Нет данных"))
             }
+            Text(tr("Тестові дані · ${s.scenario.title}. Справжні статуси з'являться, коли запрацює сервер.", "Тестовые данные · ${s.scenario.title}. Настоящие статусы появятся, когда заработает сервер."),
+                style = Type.caption.copy(fontWeight = FontWeight.Medium), color = Svetlo.colors.muted, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
         }
-        selected?.let { id -> statuses[id]?.let { RegionCard(it, onCity = if (id == "kyiv-city") onCity else null) } }
+        selected?.let { id -> statuses[id]?.let { RegionCard(it, onCity = if (id in MapAssets.CityRegions) ({ onCity(MapAssets.cityIdFor(id)) }) else null) } }
     }
     val list: @Composable () -> Unit = {
         val sorted = statuses.values.filter { it.avgMinutes != null }
             .filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
             .sortedByDescending { it.avgMinutes }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionHeader("Регионы · среднее за неделю", if (showAll) "Свернуть" else "Все ${sorted.size}") { showAll = !showAll }
+            SectionHeader(tr("Регіони · середнє за тиждень", "Регионы · среднее за неделю"), if (showAll) tr("Згорнути", "Свернуть") else tr("Усі ${sorted.size}", "Все ${sorted.size}")) { showAll = !showAll }
             (if (showAll || query.isNotBlank()) sorted else sorted.take(5)).forEach { r ->
                 RegionRow(r) { selected = r.id }
             }
@@ -194,7 +199,7 @@ private fun UkraineCanvas(
         val scale = constraints.maxWidth / mw
         Canvas(
             Modifier.fillMaxSize()
-                .semantics { contentDescription = "Карта Украины: области окрашены по текущему типу отключений" }
+                .semantics { contentDescription = tr("Мапа України: області забарвлені за поточним типом відключень", "Карта Украины: области окрашены по текущему типу отключений") }
                 .pointerInput(shapes) {
                     detectTapGestures { o ->
                         val x = (o.x / scale).toInt(); val y = (o.y / scale).toInt()
@@ -220,6 +225,8 @@ private fun UkraineCanvas(
     }
 }
 
+private val PartlyOccupied = setOf("zaporizhia", "kherson", "donetsk", "kharkiv")
+
 @Composable
 private fun RegionCard(r: RegionStatus, onCity: (() -> Unit)?) {
     val c = Svetlo.colors
@@ -232,10 +239,11 @@ private fun RegionCard(r: RegionStatus, onCity: (() -> Unit)?) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(formatShort(r.avgMinutes), style = Type.number.copy(fontSize = Type.section.fontSize * 1.1f), color = c.ink)
-                Text("в день", style = Type.caption, color = c.muted)
+                Text(tr("на день", "в день"), style = Type.caption, color = c.muted)
             }
         }
-        if (onCity != null) PrimaryButton("Открыть карту домов Киева", onCity, Modifier.fillMaxWidth())
+        if (r.id in PartlyOccupied) Text(tr("Дані лише для підконтрольної Україні території.", "Данные только для подконтрольной Украине территории."), style = Type.small, color = c.ink2)
+        if (onCity != null) PrimaryButton(if (r.id == "zaporizhia") tr("Відкрити мапу будинків Запоріжжя", "Открыть карту домов Запорожья") else tr("Відкрити мапу будинків Києва", "Открыть карту домов Киева"), onCity, Modifier.fillMaxWidth())
     }
 }
 
@@ -284,11 +292,11 @@ private class BuildingShape(val b: Building, val path: Path)
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CityMapScreen(
-    repo: OutageRepository, s: Settings, now: LocalDateTime, initialQueue: String?,
-    onBack: () -> Unit, onArea: () -> Unit, onMyHome: (street: String, queue: String) -> Unit,
+    repo: OutageRepository, s: Settings, now: LocalDateTime, initialQueue: String?, cityId: String?,
+    onBack: () -> Unit, onArea: () -> Unit, onMyHome: (street: String, queue: String, city: CityMap) -> Unit,
 ) {
     val ctx = LocalContext.current
-    val city = remember { MapAssets.city(ctx, repo.queues) }
+    val city = remember(cityId) { MapAssets.city(ctx, repo.queues, cityId ?: MapAssets.cityIdFor(s.selected.region)) }
     val shapes = remember(city) {
         city.buildings.map { b ->
             val p = Path()
@@ -306,7 +314,7 @@ fun CityMapScreen(
         }
     }
     val status = remember(s.scenario, now.hour, now.minute / 30) { repo.queues.associateWith { repo.queueOffNow(it, now, s.scenario) } }
-    val home = remember(city, s.selected.street) { city.buildings.firstOrNull { it.address == s.selected.street } ?: city.buildings.firstOrNull { it.address == MapAssets.HOME_ADDRESS } }
+    val home = remember(city, s.selected.street) { city.buildings.firstOrNull { it.address == s.selected.street } ?: city.buildings.firstOrNull { it.address == city.homeAddress } }
     var filter by remember { mutableStateOf(initialQueue) }
     var picked by remember { mutableStateOf(home) }
     var query by remember { mutableStateOf("") }
@@ -335,7 +343,7 @@ fun CityMapScreen(
                 val pinColor = c.ink
                 Canvas(
                     Modifier.fillMaxSize()
-                        .semantics { contentDescription = "Карта домов: каждый дом окрашен по статусу своей очереди" }
+                        .semantics { contentDescription = tr("Мапа будинків: кожен будинок забарвлений за статусом своєї черги", "Карта домов: каждый дом окрашен по статусу своей очереди") }
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, gz, _ ->
                                 zoom = (zoom * gz).coerceIn(minZoom, 12f)
@@ -406,8 +414,8 @@ fun CityMapScreen(
                 // Верхние элементы управления.
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FloatingSquare(Icons.AutoMirrored.Rounded.ArrowBack, "Назад к карте Украины", onBack)
-                        SearchField(query, { query = it }, "Улица и дом в Киеве", Modifier.weight(1f), elevated = true)
+                        FloatingSquare(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад до мапи України", "Назад к карте Украины"), onBack)
+                        SearchField(query, { query = it }, tr("Вулиця і будинок · ${city.city}", "Улица и дом · ${city.city}"), Modifier.weight(1f), elevated = true)
                     }
                     AnimatedVisibility(suggestions.isNotEmpty()) {
                         Column(Modifier.fillMaxWidth().shadow(10.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(c.surface)) {
@@ -419,8 +427,8 @@ fun CityMapScreen(
                         }
                     }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item { FilterChip("Все очереди", filter == null) { filter = null } }
-                        item { FilterChip("Моя ${s.selected.queue}", filter == s.selected.queue, icon = Icons.Rounded.Home) { filter = s.selected.queue } }
+                        item { FilterChip(tr("Усі черги", "Все очереди"), filter == null) { filter = null } }
+                        item { FilterChip(tr("Моя ${s.selected.queue}", "Моя ${s.selected.queue}"), filter == s.selected.queue, icon = Icons.Rounded.Home) { filter = s.selected.queue } }
                         items(repo.queues.filter { it != s.selected.queue }) { q -> FilterChip(q, filter == q) { filter = q } }
                     }
                 }
@@ -429,17 +437,17 @@ fun CityMapScreen(
                     Modifier.align(Alignment.CenterEnd).padding(horizontal = 16.dp)
                         .shadow(10.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(c.surface),
                 ) {
-                    ZoomButton(Icons.Rounded.Add, "Приблизить") { zoom = (zoom * 1.5f).coerceAtMost(12f) }
+                    ZoomButton(Icons.Rounded.Add, tr("Наблизити", "Приблизить")) { zoom = (zoom * 1.5f).coerceAtMost(12f) }
                     Box(Modifier.width(44.dp).height(1.dp).background(c.divider))
-                    ZoomButton(Icons.Rounded.Remove, "Отдалить") { zoom = (zoom / 1.5f).coerceAtLeast(0.2f) }
+                    ZoomButton(Icons.Rounded.Remove, tr("Віддалити", "Отдалить")) { zoom = (zoom / 1.5f).coerceAtLeast(0.2f) }
                     Box(Modifier.width(44.dp).height(1.dp).background(c.divider))
-                    ZoomButton(Icons.Rounded.Home, "Мой дом", tint = c.accent) {
+                    ZoomButton(Icons.Rounded.Home, tr("Мій дім", "Мой дом"), tint = c.accent) {
                         home?.let { center = Offset(it.cx, it.cy); picked = it }
                         scope.launch { zoomAnim.snapTo(0.92f); zoomAnim.animateTo(1f, spring(dampingRatio = 0.5f)) }
                     }
                 }
                 if (w.twoPane) MapLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 32.dp))
-                Text("© участники OpenStreetMap", style = Type.tiny, color = c.muted,
+                Text(tr("© учасники OpenStreetMap", "© участники OpenStreetMap"), style = Type.tiny, color = c.muted,
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = if (!w.twoPane && picked != null) 8.dp else if (w.useRail) 12.dp else BottomBarSpace + 4.dp))
             }
             if (w.twoPane) {
@@ -447,8 +455,8 @@ fun CityMapScreen(
                     Modifier.width(if (w.shortHeight) 320.dp else 380.dp).fillMaxHeight().background(c.bg).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    picked?.let { BuildingPanel(it, repo, s, now, status, onMyHome, onArea) { q -> filter = q } }
-                        ?: Text("Нажмите на дом, чтобы узнать его очередь и график.", style = Type.body, color = c.ink2)
+                    picked?.let { BuildingPanel(it, city, repo, s, now, status, onMyHome, onArea) { q -> filter = q } }
+                        ?: Text(tr("Натисніть на будинок, щоб дізнатися його чергу і графік.", "Нажмите на дом, чтобы узнать его очередь и график."), style = Type.body, color = c.ink2)
                 }
             }
         }
@@ -466,7 +474,7 @@ fun CityMapScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(5.dp).clip(CircleShape).background(c.line))
-                        picked?.let { BuildingPanel(it, repo, s, now, status, onMyHome, onArea) { q -> filter = q } }
+                        picked?.let { BuildingPanel(it, city, repo, s, now, status, onMyHome, onArea) { q -> filter = q } }
                     }
                 }
                 if (picked == null && !w.useRail) Box(Modifier.height(BottomBarSpace))
@@ -477,39 +485,39 @@ fun CityMapScreen(
 
 @Composable
 private fun BuildingPanel(
-    b: Building, repo: OutageRepository, s: Settings, now: LocalDateTime, status: Map<String, OutageType>,
-    onMyHome: (String, String) -> Unit, onArea: () -> Unit, onQueue: (String) -> Unit,
+    b: Building, city: CityMap, repo: OutageRepository, s: Settings, now: LocalDateTime, status: Map<String, OutageType>,
+    onMyHome: (String, String, CityMap) -> Unit, onArea: () -> Unit, onQueue: (String) -> Unit,
 ) {
     val c = Svetlo.colors
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(b.address ?: "Дом без адреса в OpenStreetMap", style = Type.h2, color = c.ink)
+            Text(b.address ?: tr("Будинок без адреси в OpenStreetMap", "Дом без адреса в OpenStreetMap"), style = Type.h2, color = c.ink)
             Text(
-                if (b.critical) "Объект критической инфраструктуры" else "Печерский район · очередь ${b.queue}",
+                if (b.critical) tr("Об'єкт критичної інфраструктури", "Объект критической инфраструктуры") else tr("${city.district} · черга ${b.queue}", "${city.district} · очередь ${b.queue}"),
                 style = Type.small, color = c.muted,
             )
         }
         val t = b.queue?.let { status[it] }
         if (t != null) {
             val on = t == OutageType.None
-            Pill(if (on) "Свет есть" else "Света нет", bg = if (on) c.greenSoft else if (t == OutageType.Stabilization) c.yellowSoft else c.redSoft,
+            Pill(if (on) tr("Світло є", "Свет есть") else tr("Світла немає", "Света нет"), bg = if (on) c.greenSoft else if (t == OutageType.Stabilization) c.yellowSoft else c.redSoft,
                 fg = if (on) c.greenInk else if (t == OutageType.Stabilization) c.yellowInk else c.redInk, border = null, dot = t.color)
         }
     }
     if (b.critical || b.queue == null) {
-        Text("Такие здания не отключают по графику, поэтому на карте их не раскрашиваем.", style = Type.small, color = c.ink2)
+        Text(tr("Такі будівлі не відключають за графіком, тому на мапі їх не розфарбовуємо.", "Такие здания не отключают по графику, поэтому на карте их не раскрашиваем."), style = Type.small, color = c.ink2)
         return
     }
     val st = repo.now(b.queue, now, s.scenario)
     val today = repo.schedule(b.queue, now.toLocalDate(), s.scenario)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        MiniStat(if (st.lightOn) "Отключат" else "Включат", st.nextChange?.let { "в ${it.hm()}" } ?: "неизвестно", Modifier.weight(1f))
-        MiniStat("Среднее", "4 ч 20 м", Modifier.weight(1f), onArea)
-        MiniStat("Сегодня", formatDuration(today.offMinutes.toLong()), Modifier.weight(1f))
+        MiniStat(if (st.lightOn) tr("Вимкнуть", "Отключат") else tr("Увімкнуть", "Включат"), st.nextChange?.let { tr("о ${it.hm()}", "в ${it.hm()}") } ?: tr("невідомо", "неизвестно"), Modifier.weight(1f))
+        MiniStat(tr("Середнє", "Среднее"), tr("4 год 20 хв", "4 ч 20 м"), Modifier.weight(1f), onArea)
+        MiniStat(tr("Сьогодні", "Сегодня"), formatDuration(today.offMinutes.toLong()), Modifier.weight(1f))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        PrimaryButton("Это мой дом", { onMyHome(b.address ?: "", b.queue) }, Modifier.weight(1f))
-        PrimaryButton("Вся очередь ${b.queue}", { onQueue(b.queue) }, Modifier.weight(1f), outlined = true)
+        PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(b.address ?: "", b.queue, city) }, Modifier.weight(1f))
+        PrimaryButton(tr("Уся черга ${b.queue}", "Вся очередь ${b.queue}"), { onQueue(b.queue) }, Modifier.weight(1f), outlined = true)
     }
 }
 
@@ -521,7 +529,7 @@ private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(label, style = Type.tiny, color = c.muted)
+        Text(label, style = Type.tiny, color = c.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         Text(value, style = Type.bodyBold.copy(fontFamily = ua.svetlo.monitor.ui.theme.Onest), color = c.ink, maxLines = 1)
     }
 }
@@ -533,7 +541,7 @@ private fun MapLegend(modifier: Modifier = Modifier) {
         modifier.shadow(6.dp, CircleShape).clip(RoundedCornerShape(18.dp)).background(c.surface).padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        LegendItem(Status.Green, "Свет есть"); LegendItem(Status.Yellow, "Стабилиз."); LegendItem(Status.Red, "Аварийные"); LegendItem(Status.Black, "Блэкаут")
+        LegendItem(Status.Green, tr("Світло є", "Свет есть")); LegendItem(Status.Yellow, tr("Стабіліз.", "Стабилиз.")); LegendItem(Status.Red, tr("Аварійні", "Аварийные")); LegendItem(Status.Black, tr("Блекаут", "Блэкаут"))
     }
 }
 

@@ -1,5 +1,7 @@
 package ua.svetlo.monitor.ui.components
 
+import ua.svetlo.monitor.data.tr
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -193,7 +195,7 @@ fun DayBar(
     val progress by animateFloatAsState(if (shown) 1f else 0f, tween(700, easing = FastOutSlowInEasing), label = "bar")
     val pulse = rememberInfiniteTransition(label = "now").animateFloat(0f, 1f, infiniteRepeatable(tween(2000, easing = LinearEasing)), label = "p")
     val ink = Svetlo.colors.ink
-    val desc = if (nowFraction != null) "График на сутки" else "График"
+    val desc = if (nowFraction != null) tr("Графік на добу", "График на сутки") else tr("Графік", "График")
     Canvas(modifier.fillMaxWidth().height(height + if (nowFraction != null) 12.dp else 0.dp).semantics { contentDescription = desc }) {
         val top = if (nowFraction != null) 6.dp.toPx() else 0f
         val h = height.toPx()
@@ -262,7 +264,7 @@ fun StatusOrb(color: Color, soft: Color, icon: ImageVector, modifier: Modifier =
 @Composable
 fun BackHeader(title: String, subtitle: String? = null, onBack: () -> Unit, trailing: @Composable RowScope.() -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        SquareButton(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", onBack)
+        SquareButton(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад"), onBack)
         Column(Modifier.weight(1f)) {
             if (subtitle != null) Text(subtitle, style = Type.caption, color = Svetlo.colors.muted)
             Text(title, style = Type.h2.copy(fontSize = Type.h2.fontSize * 0.95f), color = Svetlo.colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
