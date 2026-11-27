@@ -103,7 +103,7 @@ fun Rise(delay: Int = 0, content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRefresh: () -> Unit = {}, onWindows: () -> Unit, onRemind: (Boolean) -> Unit) {
+fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRefresh: () -> Unit = {}, onWindows: () -> Unit, onRemind: (Boolean) -> Unit, onDetail: (Int) -> Unit = {}) {
     // Открыли график — сразу проверяем, нет ли нового (сама проверка не чаще раза в минуту).
     LaunchedEffect(Unit) { onRefresh() }
     var queue by remember(s.selected.queue) { mutableStateOf(s.selected.queue) }
@@ -120,9 +120,9 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRe
     val weekCard: @Composable () -> Unit = {
         Rise {
             SCard(Modifier.fillMaxWidth()) {
-                SectionHeader(tr("Сьогодні і завтра", "Сегодня и завтра"), tr("00 — 24 год", "00 — 24 ч"))
+                SectionHeader(tr("Сьогодні і завтра", "Сегодня и завтра"), tr("Детально по годинах", "Подробно по часам")) { onDetail(0) }
                 days.forEachIndexed { i, d ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { onDetail(i) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(if (i == 0) tr("Сьогодні", "Сегодня") else tr("Завтра", "Завтра"),
                             style = Type.caption.copy(fontWeight = if (i == 0) FontWeight.ExtraBold else FontWeight.SemiBold),
                             color = if (i == 0) c.ink else c.muted, modifier = Modifier.width(60.dp))
