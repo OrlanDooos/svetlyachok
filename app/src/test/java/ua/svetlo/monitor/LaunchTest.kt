@@ -35,4 +35,17 @@ class LaunchTest {
         repeat(5) { looper.idle(); Thread.sleep(200) }
         crash?.let { throw AssertionError("Приложение упало при запуске", it) }
     }
+
+    /** Адреса из списков облэнерго: точное совпадение, старые названия улиц, выбор дома из списка. */
+    @Test fun addressIndex() {
+        val idx = ua.svetlo.monitor.data.AddressIndex.parse(javaClass.getResource("/fixtures/addr/zaporizhia.json")!!.readText())
+        org.junit.Assert.assertEquals(listOf("6.1"), idx.queuesFor("вулиця Абрагама Коопа, 108"))
+        org.junit.Assert.assertEquals(listOf("6.1"), idx.queuesFor("вулиця Істоміна, 108"))
+        org.junit.Assert.assertEquals(listOf("1.1"), idx.queuesFor("Соборний проспект, 165"))
+        org.junit.Assert.assertNull(idx.queuesFor("Соборний проспект, 151"))
+        org.junit.Assert.assertNull(idx.queuesFor("вулиця Абрагама Коопа, 108в"))
+        val (key, name) = idx.streetNames.first { it.second.contains("Абрагама Коопа") }
+        val house = idx.houses(key).first()
+        org.junit.Assert.assertNotNull(idx.queuesFor("$name, $house"))
+    }
 }

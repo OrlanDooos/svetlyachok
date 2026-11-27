@@ -60,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -340,25 +341,31 @@ private class CityIndex(city: CityMap, private val queueKeys: Array<String>) {
 fun CityMapScreen(
     repo: OutageRepository, s: Settings, now: LocalDateTime, cityId: String?,
     onBack: () -> Unit, onArea: () -> Unit, onMyHome: (street: String, city: CityMap, queue: String?) -> Unit,
+    onSetAddress: (houseKey: String, address: String?) -> Unit = { _, _ -> },
 ) {
     val ctx = LocalContext.current
-    val city = remember(cityId) { MapAssets.city(ctx, cityId ?: MapAssets.cityIdFor(s.selected.region)) }
+    val cid = cityId ?: MapAssets.cityIdFor(s.selected.region)
+    var mapVer by remember { mutableIntStateOf(0) }
+    LaunchedEffect(cid) { if (repo.refreshMap(cid)) { MapAssets.invalidate(cid); mapVer++ } }
+    val city = remember(cid, mapVer) { MapAssets.city(ctx, cid) }
     val ver by repo.version.collectAsState()
     LaunchedEffect(city.region) { repo.refreshAddresses(city.region) }
     val addrIdx = remember(ver, city.region) { repo.addresses(city.region) }
     // Очередь каждого дома — только по точному совпадению адреса со списками облэнерго.
     val queueKeys = remember(city, addrIdx) {
-        Array(city.buildings.size) { i -> val b = city.buildings[i]; if (b.critical) "crit" else addrIdx?.queuesFor(b.address)?.joinToString(",") ?: "" }
+        Array(city.buildings.size) { i -> val b = city.buildings[i]; if (b.critical) "crit" else addrIdx?.queuesFor(s.houseAddr[houseKey(city, b)] ?: b.address)?.joinToString(",") ?: "" }
     }
+    // Адрес дома: указанный жителем важнее адреса из OpenStreetMap.
+    fun addrOf(i: Int): String? = city.buildings[i].let { b -> s.houseAddr[houseKey(city, b)] ?: b.address }
     val index = remember(city, queueKeys) { CityIndex(city, queueKeys) }
     val minute = now.withSecond(0).withNano(0)
     val keyColors = remember(ver, queueKeys, minute) {
         queueKeys.toHashSet().filter { it != "" && it != "crit" }.associateWith { k -> houseLook(repo, city.region, k.split(','), now).first }
     }
     // Мои адреса в этом городе: только их очередь мы знаем точно.
-    val mine = remember(city, s.addresses) {
+    val mine = remember(city, s.addresses, s.houseAddr) {
         s.addresses.filter { it.region == city.region && it.street.isNotBlank() }
-            .mapNotNull { a -> city.buildings.indexOfFirst { it.address.equals(a.street, ignoreCase = true) }.takeIf { it >= 0 }?.let { it to a } }.toMap()
+            .mapNotNull { a -> city.buildings.indices.firstOrNull { addrOf(it).equals(a.street, ignoreCase = true) }?.let { it to a } }.toMap()
     }
     val home = remember(city, mine) {
         mine.keys.firstOrNull()?.let { city.buildings[it] } ?: city.buildings.firstOrNull { it.address == city.homeAddress }
@@ -377,7 +384,7 @@ fun CityMapScreen(
     val zoomAnim = remember { Animatable(1f) }
 
     val suggestions = remember(query, city) {
-        if (query.length < 2) emptyList() else city.buildings.indices.filter { city.buildings[it].address?.contains(query.trim(), true) == true }.distinctBy { city.buildings[it].address }.take(5)
+        if (query.length < 2) emptyList() else city.buildings.indices.filter { addrOf(it)?.contains(query.trim(), true) == true }.distinctBy { addrOf(it) }.take(5)
     }
 
     Box(Modifier.fillMaxSize().clipToBounds().background(c.mapBg)) {
@@ -474,7 +481,7 @@ fun CityMapScreen(
                         Column(Modifier.fillMaxWidth().shadow(10.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(c.surface)) {
                             suggestions.forEach { i ->
                                 val b = city.buildings[i]
-                                Text(b.address ?: "", style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clickable {
+                                Text(addrOf(i) ?: "", style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clickable {
                                     picked = i; center = Offset(b.cx, b.cy); zoom = max(zoom, 2.2f); query = ""
                                 }.padding(horizontal = 16.dp, vertical = 14.dp))
                             }
@@ -504,7 +511,7 @@ fun CityMapScreen(
                     Modifier.width(if (w.shortHeight) 320.dp else 380.dp).fillMaxHeight().background(c.bg).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    picked?.let { BuildingPanel(city.buildings[it], city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) }
+                    picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
                         ?: Text(tr("Натисніть на будинок, щоб побачити адресу і чергу. Колір — чи є зараз світло за графіком.", "Нажмите на дом, чтобы увидеть адрес и очередь. Цвет — есть ли сейчас свет по графику."), style = Type.body, color = c.ink2)
                 }
             }
@@ -523,7 +530,7 @@ fun CityMapScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(5.dp).clip(CircleShape).background(c.line))
-                        picked?.let { BuildingPanel(city.buildings[it], city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) }
+                        picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
                     }
                 }
                 if (picked == null && !w.useRail) Box(Modifier.height(BottomBarSpace))
@@ -545,15 +552,21 @@ private fun houseLook(repo: OutageRepository, region: String, queues: List<Strin
 
 @Composable
 private fun BuildingPanel(
-    b: Building, city: CityMap, mine: ua.svetlo.monitor.data.Address?, queues: List<String>?, addrIdx: ua.svetlo.monitor.data.AddressIndex?,
+    b: Building, address: String?, userSet: Boolean, city: CityMap, mine: ua.svetlo.monitor.data.Address?, queues: List<String>?, addrIdx: ua.svetlo.monitor.data.AddressIndex?,
     repo: OutageRepository, now: LocalDateTime, onMyHome: (String, CityMap, String?) -> Unit, onArea: () -> Unit,
+    onSetAddress: (String?) -> Unit,
 ) {
     val c = Svetlo.colors
+    var picking by remember(b) { mutableStateOf(false) }
+    if (picking && addrIdx != null) {
+        HouseAddressPicker(addrIdx, onCancel = { picking = false }) { a -> picking = false; onSetAddress(a) }
+        return
+    }
     val ctx = LocalContext.current
     val qs = mine?.let { listOf(it.queue) } ?: queues
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(b.address ?: tr("Адреса невідома", "Адрес неизвестен"), style = Type.h2, color = c.ink)
+            Text(address ?: tr("Адреса невідома", "Адрес неизвестен"), style = Type.h2, color = c.ink)
             Text(
                 when {
                     b.critical -> tr("Об'єкт критичної інфраструктури", "Объект критической инфраструктуры")
@@ -581,7 +594,8 @@ private fun BuildingPanel(
         }
         if (mine == null) {
             Text(tr("Черга — з переліків адрес ${addrIdx?.title?.substringBefore(':') ?: "обленерго"}.", "Очередь — из списков адресов ${addrIdx?.title?.substringBefore(':') ?: "облэнерго"}."), style = Type.caption, color = c.muted)
-            if (b.address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(b.address, city, qs.singleOrNull()) }, Modifier.fillMaxWidth())
+            if (address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(address, city, qs.singleOrNull()) }, Modifier.fillMaxWidth())
+            if (userSet) UserAddressNote({ picking = true }, { onSetAddress(null) })
         }
         return
     }
@@ -591,18 +605,69 @@ private fun BuildingPanel(
     }
     Text(
         when {
-            b.address == null -> tr("У відкритих картах для цього будинку немає адреси, тому чергу не показуємо.", "В открытых картах у этого дома нет адреса, поэтому очередь не показываем.")
+            address == null -> tr("У відкритих картах для цього будинку немає адреси, тому чергу не показуємо.", "В открытых картах у этого дома нет адреса, поэтому очередь не показываем.")
             addrIdx == null -> tr("Для цього міста ще немає переліку адрес за чергами. Свою чергу можна дізнатися на сайті оператора.", "Для этого города ещё нет списка адресов по очередям. Свою очередь можно узнать на сайте оператора.")
             else -> tr("Цієї адреси немає в переліках обленерго для населення. Свою чергу можна уточнити на сайті оператора.", "Этого адреса нет в списках облэнерго для населения. Свою очередь можно уточнить на сайте оператора.")
         }, style = Type.small, color = c.ink2,
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (b.address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(b.address, city, null) }, Modifier.weight(1f))
+        if (address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(address, city, null) }, Modifier.weight(1f))
         LookupUrls[city.region]?.let { url ->
             PrimaryButton(tr("Дізнатися чергу", "Узнать очередь"), {
                 runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }, Modifier.weight(1f), outlined = true)
         }
+    }
+    if (addrIdx != null) {
+        if (userSet) UserAddressNote({ picking = true }, { onSetAddress(null) })
+        else Text(tr("Знаєте адресу цього будинку? Вкажіть її", "Знаете адрес этого дома? Укажите его"), style = Type.smallBold, color = c.accent,
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { picking = true }.padding(vertical = 8.dp))
+    }
+}
+
+private fun houseKey(city: CityMap, b: Building) = "${city.id}:${b.cx.toInt()}:${b.cy.toInt()}"
+
+@Composable
+private fun UserAddressNote(onChange: () -> Unit, onRemove: () -> Unit) {
+    val c = Svetlo.colors
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(tr("Адресу вказали ви", "Адрес указали вы"), style = Type.caption, color = c.muted, modifier = Modifier.weight(1f))
+        Text(tr("Змінити", "Изменить"), style = Type.smallBold, color = c.accent, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onChange).padding(8.dp))
+        Text(tr("Прибрати", "Убрать"), style = Type.smallBold, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onRemove).padding(8.dp))
+    }
+}
+
+/** Выбор адреса дома из официального списка облэнерго: улица, потом номер. Ничего вписать «от себя» нельзя. */
+@Composable
+private fun HouseAddressPicker(idx: ua.svetlo.monitor.data.AddressIndex, onCancel: () -> Unit, onPick: (String) -> Unit) {
+    val c = Svetlo.colors
+    var street by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var q by remember { mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(if (street == null) tr("Вулиця будинку", "Улица дома") else street!!.second, style = Type.h2, color = c.ink, modifier = Modifier.weight(1f))
+        Text(tr("Скасувати", "Отмена"), style = Type.smallBold, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onCancel).padding(8.dp))
+    }
+    val st = street
+    if (st == null) {
+        SearchField(q, { q = it }, tr("Почніть вводити назву вулиці", "Начните вводить название улицы"))
+        val found = remember(q) {
+            val k = q.trim().lowercase()
+            if (k.length < 2) emptyList() else idx.streetNames.filter { it.second.lowercase().contains(k) }.take(6)
+        }
+        found.forEach { s ->
+            Text(s.second, style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { street = s }.padding(horizontal = 4.dp, vertical = 12.dp))
+        }
+        Text(tr("Вулиці — з переліку обленерго. Якщо вашої немає, будинок не входить у графіки для населення.", "Улицы — из списка облэнерго. Если вашей нет, дом не входит в графики для населения."), style = Type.caption, color = c.muted)
+    } else {
+        Text(tr("Оберіть номер будинку", "Выберите номер дома"), style = Type.small, color = c.ink2)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+            idx.houses(st.first).forEach { h ->
+                Box(Modifier.heightIn(min = 40.dp).widthIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).background(c.surface2).clickable { onPick("${st.second}, $h") }.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                    Text(h, style = Type.bodyBold, color = c.ink)
+                }
+            }
+        }
+        Text(tr("Інша вулиця", "Другая улица"), style = Type.smallBold, color = c.accent, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { street = null }.padding(vertical = 8.dp))
     }
 }
 

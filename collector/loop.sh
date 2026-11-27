@@ -5,6 +5,11 @@
 set -u
 end=$(( $(date +%s) + ${LOOP_SECONDS:-20400} ))
 publish() {
+  # Карты домов собирает отдельная еженедельная задача (maps.yml) в ветку maps — добавляем их в data.
+  if git fetch -q --depth 1 origin maps 2>/dev/null; then
+    rm -rf collector/out/v1/maps && mkdir -p collector/out/v1/maps
+    git --work-tree=collector/out checkout origin/maps -- v1/maps 2>/dev/null && git reset -q
+  fi
   ( cd collector/out
     rm -rf .git && git init -q -b data
     git config user.name "svetlyachok-bot"

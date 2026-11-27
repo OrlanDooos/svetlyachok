@@ -125,6 +125,39 @@ class ScheduleStore(private val dir: File) {
         }
     }
 
+    /**
+     * Свежая карта города: раз в сутки смотрим maps/index.json и качаем карту (~1,6 МБ), только если она изменилась.
+     * Возвращает true, если карта обновилась.
+     */
+    suspend fun refreshMap(id: String): Boolean = withContext(Dispatchers.IO) {
+        val mapDir = File(dir, "maps").apply { mkdirs() }
+        val mark = File(mapDir, "$id.hash")
+        if (mark.exists() && System.currentTimeMillis() - mark.lastModified() < 24 * 3600_000L) return@withContext false
+        runCatching {
+            val remote = JSONObject(download("maps/index.json")).optJSONObject(id)?.optString("hash") ?: return@runCatching false
+            if (mark.exists() && mark.readText() == remote) { mark.setLastModified(System.currentTimeMillis()); return@runCatching false }
+            val bytes = downloadBytes("maps/$id.bin")
+            check(bytes.size > 8 && String(bytes, 0, 4) == "SVC2") { "bad map" }
+            val tmp = File(mapDir, "$id.bin.tmp"); tmp.writeBytes(bytes); tmp.renameTo(File(mapDir, "$id.bin"))
+            mark.writeText(remote)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun downloadBytes(name: String): ByteArray {
+        var last: Exception? = null
+        for (base in DataSource.Bases) {
+            val c = URL(base + name + "?t=" + System.currentTimeMillis() / 3600000).openConnection() as HttpURLConnection
+            c.connectTimeout = 15000; c.readTimeout = 60000
+            c.setRequestProperty("User-Agent", "Svetlyachok-Android")
+            try {
+                if (c.responseCode == 200) return c.inputStream.readBytes()
+                last = IllegalStateException("HTTP ${c.responseCode}")
+            } catch (e: Exception) { last = e } finally { c.disconnect() }
+        }
+        throw last ?: IllegalStateException("no source")
+    }
+
     /** Для тестов: положить данные в кэш. */
     fun put(name: String, json: String) {
         File(dir, name).apply { parentFile?.mkdirs() }.writeText(json)
@@ -197,6 +230,7 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
     override fun summary(region: String) = store.summaries().firstOrNull { it.id == region }
     override fun addresses(region: String) = store.addresses(region)
     override suspend fun refreshAddresses(region: String) { store.refreshAddresses(region) }
+    override suspend fun refreshMap(id: String) = store.refreshMap(id)
     override fun region(region: String) = store.region(region)
 
     override fun queues(region: String): List<String> =

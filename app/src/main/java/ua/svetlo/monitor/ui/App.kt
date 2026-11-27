@@ -273,7 +273,8 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
                         st.copy(addresses = st.addresses.map { if (it.id == cur.id) home else it })
                     }
                     if (queue != null) nav.goTab(Routes.Home) else nav.navigate(Routes.Addresses)
-                })
+                },
+                onSetAddress = { key, addr -> update { st -> st.copy(houseAddr = if (addr == null) st.houseAddr - key else st.houseAddr + (key to addr)) } })
         }
         composable(Routes.Area) { AreaScreen(repo, s, onBack = { nav.popBackStack() }) }
         composable(Routes.Schedule) {

@@ -12,6 +12,7 @@ interface OutageRepository {
     fun summary(region: String): RegionSummary?
     fun addresses(region: String): AddressIndex?
     suspend fun refreshAddresses(region: String)
+    suspend fun refreshMap(id: String): Boolean
     fun region(region: String): RegionData?
     fun queues(region: String): List<String>
     fun schedule(region: String, queue: String, date: LocalDate): DaySchedule
@@ -79,8 +80,20 @@ object MapAssets {
 
     fun allCities(ctx: Context): List<CityMap> = CityFiles.keys.map { city(ctx, it) }
 
+    /** Свежая карта, скачанная с сервера (еженедельная пересборка из OpenStreetMap). */
+    fun downloaded(ctx: Context, id: String) = java.io.File(ctx.filesDir, "data/v1/maps/$id.bin")
+
+    fun invalidate(id: String) = synchronized(this) { cities.remove(id) }
+
     fun city(ctx: Context, id: String = "kyiv"): CityMap = synchronized(this) {
-        cities[id] ?: java.io.DataInputStream(java.io.BufferedInputStream(ctx.assets.open(CityFiles[id] ?: CityFiles.getValue("kyiv")), 1 shl 16)).use { inp ->
+        cities[id]?.let { return it }
+        val file = downloaded(ctx, id)
+        if (file.exists()) runCatching { return read(file.inputStream(), id) }.onFailure { file.delete() }
+        read(ctx.assets.open(CityFiles[id] ?: CityFiles.getValue("kyiv")), id)
+    }
+
+    private fun read(stream: java.io.InputStream, id: String): CityMap =
+        java.io.DataInputStream(java.io.BufferedInputStream(stream, 1 shl 16)).use { inp ->
             val magic = ByteArray(4).also { inp.readFully(it) }
             check(String(magic) == "SVC2") { "bad map file" }
             val meta = JSONObject(String(ByteArray(inp.readInt()).also { inp.readFully(it) }, Charsets.UTF_8))
@@ -110,9 +123,8 @@ object MapAssets {
             val maxX = buildings.maxOf { it.maxX }; val maxY = buildings.maxOf { it.maxY }
             CityMap(meta.getString("id"), meta.getString("region"), meta.getString("city"), meta.getString("city_ru"),
                 meta.getString("district"), meta.getString("district_ru"), meta.optString("home"),
-                buildings, lines, minX, minY, maxX, maxY).also { cities[id] = it }
+                buildings, lines, minX, minY, maxX, maxY).also { synchronized(this) { cities[id] = it } }
         }
-    }
 
     const val HOME_ADDRESS = "вулиця Лєскова, 9"
 }

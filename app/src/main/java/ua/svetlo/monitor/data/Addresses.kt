@@ -7,7 +7,15 @@ import org.json.JSONObject
  * Нормализация улиц и домов повторяет collector/addresses.py — менять их нужно вместе.
  * Ничего не угадываем: дом без точного совпадения в списках считается «очередь неизвестна».
  */
-class AddressIndex(val title: String, val source: String, private val streets: Map<String, Map<String, String>>, private val aliases: Map<String, String>) {
+class AddressIndex(
+    val title: String, val source: String,
+    private val streets: Map<String, Map<String, String>>, private val aliases: Map<String, String>,
+    /** Улицы для выбора: ключ → название из списков («вул. Абрагама Коопа»). */
+    val streetNames: List<Pair<String, String>> = emptyList(),
+) {
+    /** Дома улицы по возрастанию номера. */
+    fun houses(key: String): List<String> = (streets[key]?.keys ?: emptySet()).sortedWith(compareBy({ it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }, { it }))
+
 
     /** Подочереди дома («6.1» или «1.2,5.1», если подъезды в разных) или null, если дома нет в списках. */
     fun queuesFor(address: String?): List<String>? {
@@ -56,7 +64,9 @@ class AddressIndex(val title: String, val source: String, private val streets: M
             val o = JSONObject(json)
             val st = o.getJSONObject("streets")
             val streets = HashMap<String, Map<String, String>>(st.length() * 2)
+            val names = ArrayList<Pair<String, String>>()
             st.keys().forEach { k ->
+                names += k to st.getJSONObject(k).optString("n", k)
                 val q = st.getJSONObject(k).getJSONObject("q")
                 val houses = HashMap<String, String>()
                 q.keys().forEach { qs -> q.getString(qs).split('|').forEach { h -> if (h.isNotEmpty()) houses[h] = qs } }
@@ -65,7 +75,7 @@ class AddressIndex(val title: String, val source: String, private val streets: M
             val al = o.optJSONObject("aliases")
             val aliases = HashMap<String, String>()
             al?.keys()?.forEach { aliases[it] = al.getString(it) }
-            return AddressIndex(o.optString("title"), o.optString("source"), streets, aliases)
+            return AddressIndex(o.optString("title"), o.optString("source"), streets, aliases, names.sortedBy { it.first })
         }
     }
 }

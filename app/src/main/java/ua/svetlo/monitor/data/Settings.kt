@@ -23,6 +23,8 @@ data class Settings(
     val quietNight: Boolean = false,
     val addresses: List<Address> = DefaultAddresses,
     val selectedId: String = DefaultAddresses.first().id,
+    /** Адреса домов, которые житель указал сам (дом без адреса на карте): ключ дома → «вул. X, 12». */
+    val houseAddr: Map<String, String> = emptyMap(),
 ) {
     val selected: Address get() = addresses.firstOrNull { it.id == selectedId } ?: addresses.first()
 }
@@ -51,6 +53,7 @@ class SettingsStore(private val ctx: Context) {
         val quiet = booleanPreferencesKey("quiet")
         val addresses = stringPreferencesKey("addresses")
         val selected = stringPreferencesKey("selected")
+        val houseAddr = stringPreferencesKey("house_addr")
         val schema = intPreferencesKey("schema")
     }
 
@@ -79,6 +82,7 @@ class SettingsStore(private val ctx: Context) {
             quietNight = this[K.quiet] ?: d.quietNight,
             addresses = addrs,
             selectedId = this[K.selected]?.takeIf { id -> addrs.any { it.id == id } } ?: addrs.first().id,
+            houseAddr = this[K.houseAddr]?.split("\u001e")?.mapNotNull { r -> r.split("\u001f").takeIf { it.size == 2 }?.let { it[0] to it[1] } }?.toMap() ?: emptyMap(),
         )
     }
 
@@ -96,6 +100,7 @@ class SettingsStore(private val ctx: Context) {
             p[K.quiet] = s.quietNight
             p[K.addresses] = encode(s.addresses)
             p[K.selected] = s.selectedId
+            p[K.houseAddr] = s.houseAddr.entries.joinToString("\u001e") { "${it.key}\u001f${it.value}" }
             p[K.schema] = SCHEMA
         }
     }
