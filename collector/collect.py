@@ -213,17 +213,32 @@ def lviv():
 
 # ------------------------------------------------------------------ Telegram-каналы облэнерго
 
-def telegram_posts(channel):
-    page = fetch(f"https://t.me/s/{channel}")
-    posts = []
-    for block in re.findall(r'<div class="tgme_widget_message_wrap.*?</time>', page, re.S):
-        t = re.search(r'<div class="tgme_widget_message_text js-message_text"[^>]*>(.*?)</div>', block, re.S)
-        when = re.search(r'datetime="([^"]+)"', block)
-        if not t or not when:
-            continue
-        text = html.unescape(re.sub(r"<br\s*/?>", "\n", t.group(1)))
-        posts.append((dt.datetime.fromisoformat(when.group(1)), re.sub(r"<[^>]+>", "", text)))
-    return posts
+def telegram_posts(channel, hours=36, max_pages=8):
+    """Посты канала за последние [hours] часов, по возрастанию времени.
+
+    t.me/s показывает только ~20 последних постов; в загруженные дни (много сообщений об аварийных
+    отключениях) пост с ГПВ на сегодня быстро уходит за первую страницу, поэтому листаем назад (?before=).
+    """
+    posts, url = {}, f"https://t.me/s/{channel}"
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
+    for _ in range(max_pages):
+        page = fetch(url)
+        ids = []
+        for block in re.findall(r'<div class="tgme_widget_message_wrap.*?</time>', page, re.S):
+            pid = re.search(r'data-post="[^"/]+/(\d+)"', block)
+            if pid: ids.append(int(pid.group(1)))
+            t = re.search(r'<div class="tgme_widget_message_text js-message_text"[^>]*>(.*?)</div>', block, re.S)
+            when = re.search(r'datetime="([^"]+)"', block)
+            if not t or not when:
+                continue
+            text = html.unescape(re.sub(r"<br\s*/?>", "\n", t.group(1)))
+            key = int(pid.group(1)) if pid else len(posts) + 10**9
+            posts[key] = (dt.datetime.fromisoformat(when.group(1)), re.sub(r"<[^>]+>", "", text))
+        oldest = min((w for w, _ in posts.values()), default=None)
+        if not ids or (oldest and oldest < since):
+            break
+        url = f"https://t.me/s/{channel}?before={min(ids)}"
+    return sorted(posts.values(), key=lambda p: p[0])
 
 
 def telegram_gpv(channel, source_url):
@@ -280,7 +295,9 @@ def main():
             r = fn()
             old = json.load(open(path)) if os.path.exists(path) else {}
             # История: прошлые дни берём из прошлого файла, чтобы считать статистику за неделю.
-            merged = {k: v for k, v in (old.get("days") or {}).items() if k < today.isoformat()}
+            # Сегодня/завтра тоже оставляем из прошлого файла, если источник их сейчас не отдаёт
+            # (пост с графиком ушёл из ленты канала): более свежие данные источника всё равно заменят их.
+            merged = dict(old.get("days") or {})
             merged.update(r["days"])
             r["days"] = {k: v for k, v in sorted(merged.items()) if k >= (today - dt.timedelta(days=8)).isoformat()}
             cur = {k: v for k, v in r["days"].items() if k >= today.isoformat()}
