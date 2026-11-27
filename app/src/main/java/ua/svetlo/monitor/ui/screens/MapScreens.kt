@@ -542,7 +542,7 @@ fun CityMapScreen(
                     }
                 }
                 if (w.twoPane) MapLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 32.dp), repo.summary(city.region)?.mode)
-                Text(tr("© учасники OpenStreetMap", "© участники OpenStreetMap"), style = Type.tiny, color = c.muted,
+                Text(tr("© учасники OpenStreetMap · адреси © Візіком", "© участники OpenStreetMap · адреса © Визиком"), style = Type.tiny, color = c.muted,
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = if (!w.twoPane && picked != null) 8.dp else if (w.useRail) 12.dp else BottomBarSpace + 4.dp))
             }
             if (w.twoPane) {

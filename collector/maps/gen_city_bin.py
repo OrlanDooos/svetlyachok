@@ -196,6 +196,23 @@ if os.path.exists(zf):
     for i, (street, n) in interp.items():
         si, fl, pts, e = blds[i]
         blds[i] = (S(fix_addr(street) + ', ' + n), fl | 2, pts, e)
+# Очередь для своей базы адресов (сервер спрашивает Visicom, server/pins/src/visicom.js), если задан QUEUE_OUT.
+# prio 0 — без адреса и без оценки по соседям (их первыми), 1 — номер только оценён, 2 — гаражи, сараи и мелочь.
+NONRES = {'garage', 'garages', 'shed', 'industrial', 'warehouse', 'commercial', 'retail', 'service', 'roof', 'hut',
+          'kiosk', 'greenhouse', 'barn', 'transformer_tower', 'construction', 'ruins', 'carport', 'storage_tank'}
+if os.environ.get('QUEUE_OUT'):
+    queue = []
+    for si, fl, pts, e in blds:
+        if si >= 0 and not fl & 2: continue
+        g = e['geometry'][:-1] if e['geometry'][0] == e['geometry'][-1] else e['geometry']
+        if len(g) < 3: continue
+        m = [((p['lon'] - lon0) * kx, (p['lat'] - lat0) * ky) for p in g]
+        area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(m, m[1:] + m[:1]))) / 2
+        small = area < 40 or e.get('tags', {}).get('building') in NONRES
+        queue.append({'way': e['id'], 'prio': 2 if small else (1 if fl & 2 else 0),
+                      'ring': [[round(p['lon'], 7), round(p['lat'], 7)] for p in g]})
+    json.dump(queue, open(os.environ['QUEUE_OUT'], 'w'), separators=(',', ':'))
+    print(len(queue), 'in address queue:', {k: sum(1 for q in queue if q['prio'] == k) for k in (0, 1, 2)})
 blds = [(si, fl, pts) for si, fl, pts, e in blds]
 lines = []
 KIND = {'trunk':0,'primary':0,'secondary':1,'tertiary':2,'residential':3,'unclassified':3,'living_street':3,'pedestrian':4,'park':5,'water':6}

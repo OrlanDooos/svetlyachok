@@ -24,6 +24,8 @@ object DataSource {
         "https://orlandooos.github.io/svetlyachok/v1/",
         "https://raw.githubusercontent.com/OrlanDooos/svetlyachok/data/v1/",
     )
+    /** Карты домов с адресами из своей базы (© Візіком) — только на нашем сервере; в git (Bases/maps/) — только OSM. */
+    const val Maps = "https://svetlyachok-pins.svetlyachok.workers.dev/maps/v1/"
     val Kyiv: ZoneId = ZoneId.of("Europe/Kyiv")
 }
 
@@ -137,29 +139,35 @@ class ScheduleStore(private val dir: File) {
         val mapDir = File(dir, "maps").apply { mkdirs() }
         val mark = File(mapDir, "$id.hash")
         if (mark.exists() && System.currentTimeMillis() - mark.lastModified() < 24 * 3600_000L) return@withContext false
-        runCatching {
-            val remote = JSONObject(download("maps/index.json")).optJSONObject(id)?.optString("hash") ?: return@runCatching false
-            if (mark.exists() && mark.readText() == remote) { mark.setLastModified(System.currentTimeMillis()); return@runCatching false }
-            val bytes = downloadBytes("maps/$id.bin")
-            check(bytes.size > 8 && String(bytes, 0, 4) == "SVC2") { "bad map" }
-            val tmp = File(mapDir, "$id.bin.tmp"); tmp.writeBytes(bytes); tmp.renameTo(File(mapDir, "$id.bin"))
-            mark.writeText(remote)
-            true
-        }.getOrDefault(false)
+        // Сначала наш сервер (карта с адресами из своей базы), потом git (только OSM). Если уже стоит карта
+        // с сервера, на карту из git не откатываемся: сервер мог просто не ответить.
+        val sources = listOf("s:" to DataSource.Maps) + DataSource.Bases.map { "g:" to it + "maps/" }
+        val current = if (mark.exists()) mark.readText() else ""
+        for ((tag, base) in sources) {
+            if (tag == "g:" && current.startsWith("s:")) break
+            val result = runCatching {
+                val remote = tag + (JSONObject(String(fetch(base + "index.json", 20000), Charsets.UTF_8)).optJSONObject(id)?.optString("hash")
+                    ?.takeIf { it.isNotEmpty() } ?: error("no map"))
+                if (current == remote) { mark.setLastModified(System.currentTimeMillis()); return@runCatching false }
+                val bytes = fetch(base + "$id.bin", 60000)
+                check(bytes.size > 8 && String(bytes, 0, 4) == "SVC2") { "bad map" }
+                val tmp = File(mapDir, "$id.bin.tmp"); tmp.writeBytes(bytes); tmp.renameTo(File(mapDir, "$id.bin"))
+                mark.writeText(remote)
+                true
+            }
+            if (result.isSuccess) return@withContext result.getOrThrow()
+        }
+        false
     }
 
-    private fun downloadBytes(name: String): ByteArray {
-        var last: Exception? = null
-        for (base in DataSource.Bases) {
-            val c = URL(base + name + "?t=" + System.currentTimeMillis() / 3600000).openConnection() as HttpURLConnection
-            c.connectTimeout = 15000; c.readTimeout = 60000
-            c.setRequestProperty("User-Agent", "Svetlyachok-Android")
-            try {
-                if (c.responseCode == 200) return c.inputStream.readBytes()
-                last = IllegalStateException("HTTP ${c.responseCode}")
-            } catch (e: Exception) { last = e } finally { c.disconnect() }
-        }
-        throw last ?: IllegalStateException("no source")
+    private fun fetch(url: String, readTimeout: Int): ByteArray {
+        val c = URL(url + "?t=" + System.currentTimeMillis() / 3600000).openConnection() as HttpURLConnection
+        c.connectTimeout = 15000; c.readTimeout = readTimeout
+        c.setRequestProperty("User-Agent", "Svetlyachok-Android")
+        try {
+            check(c.responseCode == 200) { "HTTP ${c.responseCode}" }
+            return c.inputStream.readBytes()
+        } finally { c.disconnect() }
     }
 
     /** Для тестов: положить данные в кэш. */

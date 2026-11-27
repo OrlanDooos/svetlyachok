@@ -4,6 +4,10 @@
 качаем из Overpass по клеткам, затем gen_city_bin.py собирает бинарный файл карты.
 Результат: out/v1/maps/{id}.bin и out/v1/maps/index.json ({id: {"hash", "builtAt", ...}}).
 Если хоть одна клетка не скачалась, карту не публикуем: лучше старая полная, чем новая с дырами.
+
+Своя база адресов (server/pins, /addr/v1): если есть доступ к серверу (OIDC-токен GitHub Actions или ADMIN_KEY),
+собираем вторую карту — с адресами из базы (© Візіком) — и кладём её только на сервер (/maps/v1),
+а дома без адреса отправляем в очередь, которую сервер спрашивает у Visicom. В публичный git эти адреса не попадают.
 """
 import hashlib, json, os, subprocess, sys, time, urllib.parse, urllib.request, datetime as dt
 
@@ -71,7 +75,44 @@ def build(cid, rel, bbox, n, out_dir):
         except Exception as ex:
             print(f"  нет отметок жителей: {ex}", flush=True)
     target = os.path.join(out_dir, f"{cid}.bin")
+    vf = os.path.join(tiles, "visicom.json")
+    if os.path.exists(vf):
+        os.remove(vf)  # публичная карта — без адресов Visicom
     subprocess.run([sys.executable, os.path.join(HERE, "gen_city_bin.py"), tiles, target, os.path.join(HERE, f"{cid}.meta.json")], check=True)
+    return target, tiles, region
+
+
+def server_token():
+    """OIDC-токен GitHub Actions (aud svetlyachok-data) или ADMIN_KEY; None — сервера нет, вторую карту не собираем."""
+    url, tok = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"), os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    if url and tok:
+        req = urllib.request.Request(f"{url}&audience=svetlyachok-data", headers={"Authorization": f"Bearer {tok}"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.load(r)["value"]
+    return os.environ.get("ADMIN_KEY")
+
+
+def server(method, path, token, body=None, ctype="application/json"):
+    req = urllib.request.Request(os.environ.get("PINS_URL", "https://svetlyachok-pins.svetlyachok.workers.dev").rstrip("/") + path,
+                                 data=body, method=method, headers={"Authorization": f"Bearer {token}", "Content-Type": ctype,
+                                                                    "User-Agent": "svetlyachok-maps"})  # Python-urllib Cloudflare режет (1010)
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return r.read()
+
+
+def build_private(cid, tiles, region, token, out_dir):
+    """Карта с адресами из своей базы: только на сервер. Плюс очередь домов без адреса."""
+    open(os.path.join(tiles, "visicom.json"), "wb").write(server("GET", f"/addr/v1/{region}.json", token))
+    target = os.path.join(out_dir, f"{cid}.bin")
+    qf = os.path.join(tiles, "queue.json")
+    subprocess.run([sys.executable, os.path.join(HERE, "gen_city_bin.py"), tiles, target, os.path.join(HERE, f"{cid}.meta.json")],
+                   check=True, env={**os.environ, "QUEUE_OUT": qf})
+    queue = json.load(open(qf))
+    for i in range(0, len(queue), 2000):
+        r = server("PUT", f"/addr/v1/{region}/queue", token, json.dumps({"items": queue[i:i + 2000]}).encode())
+    if queue:
+        print(f"  очередь адресов: {json.loads(r)}", flush=True)
+    server("PUT", f"/maps/v1/{cid}.bin", token, open(target, "rb").read(), "application/octet-stream")
     return target
 
 
@@ -80,16 +121,36 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     idx_path = os.path.join(out_dir, "index.json")
     index = json.load(open(idx_path)) if os.path.exists(idx_path) else {}
+    token = server_token()
+    private_dir = os.path.join("/tmp", "maps_private")
+    os.makedirs(private_dir, exist_ok=True)
+    private_index = {}
+    if token:
+        try:
+            private_index = json.loads(server("GET", "/maps/v1/index.json", token))
+        except Exception:
+            pass
+    stamp = lambda p: {"hash": hashlib.sha1(open(p, "rb").read()).hexdigest()[:12],
+                       "builtAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "bytes": os.path.getsize(p)}
     for cid, (rel, bbox, n) in CITIES.items():
         print(f"→ {cid}", flush=True)
         try:
-            path = build(cid, rel, bbox, n, out_dir)
-            h = hashlib.sha1(open(path, "rb").read()).hexdigest()[:12]
-            index[cid] = {"hash": h, "builtAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "bytes": os.path.getsize(path)}
-            print(f"  ok {h} {os.path.getsize(path)} байт", flush=True)
+            path, tiles, region = build(cid, rel, bbox, n, out_dir)
+            index[cid] = stamp(path)
+            print(f"  ok {index[cid]['hash']} {index[cid]['bytes']} байт", flush=True)
         except Exception as ex:
             print(f"  ошибка {cid}: {ex} — оставляем прошлую карту", flush=True)
+            continue
+        if token:
+            try:
+                p = build_private(cid, tiles, region, token, private_dir)
+                private_index[cid] = stamp(p)
+                print(f"  на сервер: {private_index[cid]['hash']} {private_index[cid]['bytes']} байт", flush=True)
+            except Exception as ex:
+                print(f"  карта с адресами базы не собрана: {ex}", flush=True)
     json.dump(index, open(idx_path, "w"), ensure_ascii=False, indent=1)
+    if token and private_index:
+        server("PUT", "/maps/v1/index.json", token, json.dumps(private_index).encode())
 
 
 if __name__ == "__main__":

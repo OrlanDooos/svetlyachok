@@ -42,3 +42,32 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 CREATE INDEX IF NOT EXISTS feedback_install_day ON feedback(install, created);
 CREATE INDEX IF NOT EXISTS feedback_ip_day ON feedback(ip_hash, created);
+
+-- Своя база адресов домов: дом = id контура в OSM. source: visicom (© Візіком, хранить только для работы
+-- приложения, третьим лицам не передавать), osm, pin… Пустой address — источник адреса не знает.
+CREATE TABLE IF NOT EXISTS addresses (
+  region  TEXT NOT NULL,
+  way     INTEGER NOT NULL,
+  address TEXT NOT NULL,
+  source  TEXT NOT NULL,
+  updated INTEGER NOT NULL,
+  PRIMARY KEY (region, way)
+);
+
+-- Карты домов (бинарные файлы по частям, D1 не хранит строки больше ~1 МБ).
+CREATE TABLE IF NOT EXISTS blobs (
+  path TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  data BLOB NOT NULL,
+  PRIMARY KEY (path, part)
+);
+
+-- Дома без адреса, которые сервер ещё не спросил у Visicom. prio: 0 — жилые, 1 — прочие, 2 — мелкие постройки.
+CREATE TABLE IF NOT EXISTS addr_queue (
+  region TEXT NOT NULL,
+  way    INTEGER NOT NULL,
+  ring   TEXT NOT NULL,
+  prio   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (region, way)
+);
+CREATE INDEX IF NOT EXISTS addr_queue_prio ON addr_queue(prio, way);
