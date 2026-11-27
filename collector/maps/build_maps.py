@@ -55,6 +55,10 @@ def build(cid, rel, bbox, n, out_dir):
             print(f"  клетка {i},{j}", flush=True)
             open(os.path.join(tiles, f"b_{i}_{j}.json"), "wb").write(overpass(f"(way[building]({bb}););out geom tags;"))
             open(os.path.join(tiles, f"r_{i}_{j}.json"), "wb").write(overpass("(" + ROADS.format(bb=bb) + ");out geom tags;"))
+    # Большая вода (Днепр, водохранилища, острова внутри них) в OSM — мультиполигоны (relation), а не отдельные пути.
+    # Качаем целиком по всему bbox: кольца собираем и обрезаем по bbox в gen_city_bin.py.
+    open(os.path.join(tiles, "water.json"), "wb").write(overpass(
+        f"(relation[natural=water]({s},{w},{nn},{e});relation[waterway=riverbank]({s},{w},{nn},{e}););out geom;"))
     open(os.path.join(tiles, "addr_nodes.json"), "wb").write(overpass(
         f'(node["addr:housenumber"]({s},{w},{nn},{e});relation["building"]["addr:housenumber"]({s},{w},{nn},{e}););out center tags;'))
     # Связки «улица → дома» (associatedStreet): номер дома стоит на здании, а улица — на отношении.
@@ -70,7 +74,8 @@ def build(cid, rel, bbox, n, out_dir):
     pins_url = os.environ.get("PINS_URL", "").rstrip("/")
     if pins_url:
         try:
-            with urllib.request.urlopen(f"{pins_url}/confirmed?region={region}", timeout=60) as r:
+            req = urllib.request.Request(f"{pins_url}/confirmed?region={region}", headers={"User-Agent": "svetlyachok-maps"})  # Python-urllib Cloudflare режет (1010)
+            with urllib.request.urlopen(req, timeout=60) as r:
                 open(os.path.join(tiles, "pins.json"), "wb").write(r.read())
         except Exception as ex:
             print(f"  нет отметок жителей: {ex}", flush=True)
