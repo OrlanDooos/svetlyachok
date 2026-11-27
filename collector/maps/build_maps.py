@@ -55,6 +55,13 @@ def build(cid, rel, bbox, n, out_dir):
         f'(node["addr:housenumber"]({s},{w},{nn},{e});relation["building"]["addr:housenumber"]({s},{w},{nn},{e}););out center tags;'))
     # Связки «улица → дома» (associatedStreet): номер дома стоит на здании, а улица — на отношении.
     open(os.path.join(tiles, "assoc.json"), "wb").write(overpass(f"area(id:{3600000000 + rel})->.a;relation[type=associatedStreet](area.a);out body;"))
+    # Официальный список адресов облэнерго (его собирает collect.yml в ветку data): нужен для оценки номеров.
+    region = json.load(open(os.path.join(HERE, f"{cid}.meta.json")))["region"]
+    try:
+        with urllib.request.urlopen(f"https://raw.githubusercontent.com/OrlanDooos/svetlyachok/data/v1/addr/{region}.json", timeout=60) as r:
+            open(os.path.join(tiles, "zoe.json"), "wb").write(r.read())
+    except Exception as ex:
+        print(f"  нет списка адресов {region}: {ex} — номера не оцениваем", flush=True)
     target = os.path.join(out_dir, f"{cid}.bin")
     subprocess.run([sys.executable, os.path.join(HERE, "gen_city_bin.py"), tiles, target, os.path.join(HERE, f"{cid}.meta.json")], check=True)
     return target

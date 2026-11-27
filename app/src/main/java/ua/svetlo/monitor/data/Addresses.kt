@@ -17,6 +17,17 @@ class AddressIndex(
     fun houses(key: String): List<String> = (streets[key]?.keys ?: emptySet()).sortedWith(compareBy({ it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }, { it }))
 
 
+    /** Улица адреса в списке («вул. Дальня, 14» → ключ и название), чтобы сразу предложить её номера. */
+    fun streetOf(address: String?): Pair<String, String>? {
+        val cut = address?.lastIndexOf(',') ?: return null
+        if (cut <= 0) return null
+        for (k in streetKeys(address.substring(0, cut))) {
+            val key = aliases[k] ?: k
+            if (streets.containsKey(key)) return key to (streetNames.firstOrNull { it.first == key }?.second ?: address.substring(0, cut))
+        }
+        return null
+    }
+
     /** Подочереди дома («6.1» или «1.2,5.1», если подъезды в разных) или null, если дома нет в списках. */
     fun queuesFor(address: String?): List<String>? {
         if (address.isNullOrBlank()) return null

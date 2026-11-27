@@ -62,4 +62,11 @@ class VisicomTest {
         val (lon, lat) = city.insideLonLat(b)
         assertEquals(35.2, lon, 1e-5); assertEquals(47.81, lat, 1e-5)
     }
+
+    @Test fun streetOfForFixing() {
+        val idx = AddressIndex("ZOE", "", mapOf("дальня" to mapOf("14" to "3.1", "14а" to "3.2")), mapOf("стара" to "дальня"), listOf("дальня" to "вул. Дальня"))
+        assertEquals("дальня" to "вул. Дальня", idx.streetOf("вулиця Дальня, 15"))
+        assertEquals("дальня" to "вул. Дальня", idx.streetOf("вул. Стара, 1"))
+        assertEquals(null, idx.streetOf("вул. Невідома, 1"))
+    }
 }

@@ -3,7 +3,7 @@ usage: gen_city_bin.py tiles_dir out.bin meta.json
 Формат (big-endian, DataInputStream):
   'SVC2' | int metaLen | meta(utf8 json)
   int nStr | (ushort len, utf8)*      — таблица строк (адреса и названия улиц)
-  int nB  | per building: int strIdx(-1), byte flags, ushort n, int x0, int y0 (дм), (short dx, short dy)*(n-1)
+  int nB  | per building: int strIdx(-1), byte flags (1 — критическая инфраструктура, 2 — номер оценён интерполяцией), ushort n, int x0, int y0 (дм), (short dx, short dy)*(n-1)
   int nL  | per line: byte kind, int strIdx, ushort n, int x0, int y0, (short dx, short dy)*(n-1)
 """
 import json, sys, glob, math, struct, os
@@ -131,7 +131,36 @@ for e in B.values():
     if addr is None and grid:
         addr = addr_inside(g)
         if addr: from_points += 1
-    blds.append((S(addr), 1 if (t.get('building') in crit or t.get('amenity') in crit) else 0, pts))
+    blds.append((S(addr), 1 if (t.get('building') in crit or t.get('amenity') in crit) else 0, pts, e))
+# Оценка номеров домов без адреса по соседям на той же улице (collector/maps/interpolate.py).
+# Только если есть официальный список адресов: номер должен в нём быть. В файле — флаг 2.
+interp = {}
+zf = os.path.join(tiles, 'zoe.json')
+if os.path.exists(zf):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from interpolate import interpolate
+    z = json.load(open(zf))
+    zoe = {}
+    for k, v in z.get('streets', {}).items():
+        zoe[k] = {h for hs in v['q'].values() for h in hs.split('|')}
+    for k, v in z.get('aliases', {}).items():
+        zoe.setdefault(k, set()).update(zoe.get(v, set()))
+    def mpt(lon, lat): return ((lon - lon0) * kx, (lat0 - lat) * ky)
+    cand = []
+    for i, (si, fl, pts, e) in enumerate(blds):
+        t = dict(e.get('tags', {}))
+        if si >= 0 and 'addr:street' not in t:  # адрес из связки или точки внутри — тоже опора
+            st_, hn_ = strings[si].rsplit(', ', 1); t['addr:street'] = st_; t['addr:housenumber'] = hn_
+        g = [mpt(p['lon'], p['lat']) for p in e['geometry']]
+        area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(g, g[1:] + g[:1]))) / 2
+        cand.append((i, (sum(x for x, _ in g) / len(g), sum(y for _, y in g) / len(g)), area, t if si >= 0 or 'addr:housenumber' in t else {k: v for k, v in t.items() if not k.startswith('addr:')}))
+    roads = [(e['tags']['name'], [mpt(p['lon'], p['lat']) for p in e['geometry']]) for e in L.values()
+             if e.get('tags', {}).get('highway') and e['tags'].get('name')]
+    interp = interpolate(cand, roads, zoe)
+    for i, (street, n) in interp.items():
+        si, fl, pts, e = blds[i]
+        blds[i] = (S(fix_addr(street) + ', ' + n), fl | 2, pts, e)
+blds = [(si, fl, pts) for si, fl, pts, e in blds]
 lines = []
 KIND = {'trunk':0,'primary':0,'secondary':1,'tertiary':2,'residential':3,'unclassified':3,'living_street':3,'pedestrian':4,'park':5,'water':6}
 for e in L.values():
@@ -159,4 +188,4 @@ with open(out, 'wb') as f:
     f.write(struct.pack('>i', len(lines)))
     for k, si, pts in lines:
         f.write(struct.pack('>bi', k, si)); pts_out(pts)
-print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')
+print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(interp), 'interpolated;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')

@@ -578,7 +578,7 @@ private fun BuildingPanel(
     val c = Svetlo.colors
     var picking by remember(b) { mutableStateOf(false) }
     if (picking && addrIdx != null) {
-        HouseAddressPicker(addrIdx, onCancel = { picking = false }) { a -> picking = false; onSetAddress(a) }
+        HouseAddressPicker(addrIdx, address, onCancel = { picking = false }) { a -> picking = false; onSetAddress(a) }
         return
     }
     val ctx = LocalContext.current
@@ -618,6 +618,7 @@ private fun BuildingPanel(
             Text(tr("Черга — з переліків адрес ${addrIdx?.title?.substringBefore(':') ?: "обленерго"}.", "Очередь — из списков адресов ${addrIdx?.title?.substringBefore(':') ?: "облэнерго"}."), style = Type.caption, color = c.muted)
             if (address != null) PrimaryButton(tr("Це мій дім", "Это мой дом"), { onMyHome(address, city, qs.singleOrNull()) }, Modifier.fillMaxWidth())
             if (userSet) UserAddressNote({ picking = true }, { onSetAddress(null) })
+            else if (addrIdx != null) FixAddressLink { picking = true }
         }
         return
     }
@@ -644,9 +645,17 @@ private fun BuildingPanel(
     }
     if (addrIdx != null) {
         if (userSet) UserAddressNote({ picking = true }, { onSetAddress(null) })
+        else if (address != null) FixAddressLink { picking = true }
         else Text(tr("Знаєте адресу цього будинку? Вкажіть її", "Знаете адрес этого дома? Укажите его"), style = Type.smallBold, color = c.accent,
             modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { picking = true }.padding(vertical = 8.dp))
     }
+}
+
+/** Житель видит у своего дома не тот номер (14 вместо 14А) — выбирает правильный из списка облэнерго. */
+@Composable
+private fun FixAddressLink(onClick: () -> Unit) {
+    Text(tr("Адреса неправильна? Виправити", "Адрес неправильный? Исправить"), style = Type.smallBold, color = Svetlo.colors.accent,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 8.dp))
 }
 
 private fun houseKey(city: CityMap, b: Building) = "${city.id}:${b.cx.toInt()}:${b.cy.toInt()}"
@@ -663,9 +672,9 @@ private fun UserAddressNote(onChange: () -> Unit, onRemove: () -> Unit) {
 
 /** Выбор адреса дома из официального списка облэнерго: улица, потом номер. Ничего вписать «от себя» нельзя. */
 @Composable
-private fun HouseAddressPicker(idx: ua.svetlo.monitor.data.AddressIndex, onCancel: () -> Unit, onPick: (String) -> Unit) {
+private fun HouseAddressPicker(idx: ua.svetlo.monitor.data.AddressIndex, current: String? = null, onCancel: () -> Unit, onPick: (String) -> Unit) {
     val c = Svetlo.colors
-    var street by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var street by remember { mutableStateOf(idx.streetOf(current)) }
     var q by remember { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(if (street == null) tr("Вулиця будинку", "Улица дома") else street!!.second, style = Type.h2, color = c.ink, modifier = Modifier.weight(1f))
