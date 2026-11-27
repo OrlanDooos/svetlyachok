@@ -23,7 +23,7 @@ android {
                 Properties().apply { file(f).inputStream().use { load(it) } }.getProperty("visicomKey")
             } ?: ""
         // Куда отправлять отметки домов от жителей (сервер сбора). Пусто — только локально.
-        buildConfigField("String", "PINS_URL", "\"${(findProperty("svetlo.pinsUrl") as String?) ?: System.getenv("SVETLO_PINS_URL") ?: ""}\"")
+        buildConfigField("String", "PINS_URL", "\"${(findProperty("svetlo.pinsUrl") as String?) ?: System.getenv("SVETLO_PINS_URL") ?: "https://svetlyachok-pins.svetlyachok.workers.dev"}\"")
         buildConfigField("String", "VISICOM_KEY", "\"${visicomKey.replace("\"", "")}\"")
     }
 

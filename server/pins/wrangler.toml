@@ -9,4 +9,4 @@ compatibility_date = "2026-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "svetlyachok-pins"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "cd6ca06d-5fac-477e-8155-71ae29500cbd"

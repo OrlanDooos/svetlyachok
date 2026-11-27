@@ -24,7 +24,7 @@ jobs:
         with: { python-version: '3.12' }
       - name: Build
         env:
-          PINS_URL: ${{ vars.PINS_URL }}
+          PINS_URL: ${{ vars.PINS_URL || 'https://svetlyachok-pins.svetlyachok.workers.dev' }}
         run: python3 collector/maps/build_maps.py out/v1/maps
       - name: Publish
         run: |
