@@ -69,14 +69,31 @@ def norm_queue(q):
     return q if "." in q else q + ".1"
 
 
+EMERGENCY_ON = re.compile(
+    r"(запроваджено|запроваджені|застосовано|застосовані|введено|введені|діють|діятимуть|застосовуватимуться)\s+(\S+\s+){0,3}?"
+    r"(графік\w*\s+аварійних|аварійні\s+відключення|екстрені\s+відключення|гав\b|сгав\b)")
+EMERGENCY_OFF = re.compile(
+    r"((скасован\w*|відмінен\w*|припинен\w*|завершено)\s+(\S+\s+){0,3}?(гав\b|графік\w*\s+аварійних|аварійн\w*\s+відключ|екстрен\w*\s+відключ))"
+    r"|((гав|аварійні відключення|екстрені відключення)\s+(скасовано|скасовані|не застосовуються|не діють|припинено))"
+    r"|(повернення до (графіків погодинних|гпв)\s+(відбулося|здійснено))|(повертаємося до (графіків погодинних|гпв))"
+    r"|(повернулис[ья] до (графіків погодинних|гпв))")
+
+
 def detect_mode(text):
-    """Режим по тексту объявления: emergency — графики не действуют."""
+    """Режим по тексту объявления: emergency — аварийные отключения (ГАВ, графики могут не действовать)."""
     t = (text or "").lower()
     if re.search(r"(екстрені|аварійні)\s+відключення", t) and re.search(r"графік\w*\s+(тут\s+)?не\s+(працюють|діють|застосовуються)", t):
+        return "emergency"
+    if EMERGENCY_ON.search(t) and not EMERGENCY_OFF.search(t):
         return "emergency"
     if "блекаут" in t:
         return "blackout"
     return None
+
+
+def lifted(text):
+    """Объявление об отмене аварийных отключений."""
+    return bool(EMERGENCY_OFF.search((text or "").lower()))
 
 
 # ------------------------------------------------------------------ DTEK (Київ, Київщина, Дніпро, Одеса)
@@ -241,20 +258,62 @@ def telegram_posts(channel, hours=36, max_pages=8):
     return sorted(posts.values(), key=lambda p: p[0])
 
 
-def telegram_gpv(channel, source_url):
-    """Берём последний пост с ГПВ на каждую дату (более поздний пост заменяет ранний)."""
-    days, attention = {}, None
-    for when, text in telegram_posts(channel):
+OBLASTS = r"(вінниц|волин|дніпропетровськ|донецьк|житомир|закарпат|запорі|івано-франків|київськ|кіровоград|луганськ|львів|миколаїв|одес|полтав|рівнен|сумськ|тернопіл|харків|херсон|хмельниц|черкас|чернівец|чернігів)"
+
+
+def telegram_attention(posts, own, now=None):
+    """Объявление об аварийных отключениях за последние 12 часов (None — их нет или их отменили).
+
+    [own] — корень названия своей области: пост, где названы только другие области, пропускаем.
+    """
+    now = now or dt.datetime.now(KYIV)
+    attention = None
+    for when, text in posts:
+        if (now - when.astimezone(KYIV)) >= dt.timedelta(hours=12):
+            continue
+        low = text.lower()
+        named = set(re.findall(OBLASTS, low))
+        if named and own not in named:
+            continue
+        if detect_mode(text):
+            attention = clean_text(text)[:600]
+        elif lifted(text):
+            attention = None
+    return attention
+
+
+def telegram_gpv(channels, source_url, own):
+    """Берём последний пост с ГПВ на каждую дату (более поздний пост заменяет ранний).
+
+    Режим: последнее за 12 часов объявление об аварийных отключениях (ГАВ) включает «аварийные»,
+    более позднее объявление об их отмене — выключает. Каналы читаем все сразу, по времени.
+    """
+    posts = sorted((p for ch in channels for p in telegram_posts(ch)), key=lambda p: p[0])
+    days = {}
+    for when, text in posts:
         local = when.astimezone(KYIV)
         if re.search(r"ГПВ|графік\w* погодинних", text, re.I):
             date = find_date(text, local.year) or local.date()
             sched = parse_text_schedule(text)
             if len(sched) >= 4:
                 days[date.isoformat()] = sched
-        mode = detect_mode(text)
-        if mode and (dt.datetime.now(KYIV) - local) < dt.timedelta(hours=12):
-            attention = clean_text(text)[:600]
-    return {"days": days, "attention": attention, "source": f"https://t.me/{channel}"}
+    return {"days": days, "attention": telegram_attention(posts, own), "source": f"https://t.me/{channels[0]}"}
+
+
+def with_channel_attention(fn, channels, own):
+    """Сборщик с сайта + объявления об аварийных из официальных Telegram-каналов облэнерго."""
+    def run():
+        r = fn()
+        if not detect_mode(r.get("attention")):
+            try:
+                posts = sorted((p for ch in channels for p in telegram_posts(ch)), key=lambda p: p[0])
+                att = telegram_attention(posts, own)
+                if att:
+                    r["attention"] = att
+            except Exception as e:  # канал недоступен — режим определяем по сайту
+                log(f"  канал {channels}: {e}")
+        return r
+    return run
 
 
 # ------------------------------------------------------------------ регионы
@@ -264,9 +323,9 @@ REGIONS = [
     ("kyiv-city", "Київ", "ДТЕК Київські електромережі", lambda: dtek("dtek-kem.com.ua", "kyiv")),
     ("kyiv", "Київська область", "ДТЕК Київські регіональні електромережі", lambda: dtek("dtek-krem.com.ua", "kyiv-region")),
     ("dnipropetrovsk", "Дніпропетровська область", "ДТЕК Дніпровські електромережі", lambda: dtek("dtek-dnem.com.ua", "dnipro")),
-    ("odessa", "Одеська область", "ДТЕК Одеські електромережі", lambda: dtek("dtek-oem.com.ua", "odesa")),
-    ("lviv", "Львівська область", "Львівобленерго", lviv),
-    ("zaporizhia", "Запорізька область", "Запоріжжяобленерго", lambda: telegram_gpv("zoe_alarm", "https://www.zoe.com.ua/")),
+    ("odessa", "Одеська область", "ДТЕК Одеські електромережі", with_channel_attention(lambda: dtek("dtek-oem.com.ua", "odesa"), ["DTEKOdeskiElektromerezhi"], "одес")),
+    ("lviv", "Львівська область", "Львівобленерго", with_channel_attention(lviv, ["lvivoblenergo"], "львів")),
+    ("zaporizhia", "Запорізька область", "Запоріжжяобленерго", lambda: telegram_gpv(["zoe_alarm", "Zaporizhzhyaoblenergo_news"], "https://www.zoe.com.ua/", "запорі")),
 ]
 
 

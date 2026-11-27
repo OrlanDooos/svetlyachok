@@ -1,0 +1,31 @@
+name: Watchdog
+# Отдельная проверка раз в 20 минут: замечает и остановку самого сборщика (collect.yml).
+# Если данных нет или они старые — открывает issue (GitHub пришлёт уведомление) и перезапускает сборщик.
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+  actions: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Data
+        run: |
+          git fetch --depth 1 origin data
+          mkdir -p /tmp/data && git --work-tree=/tmp/data checkout origin/data -- v1/regions.json $(git ls-tree --name-only origin/data v1/ | grep '\.json$') && git reset -q
+      - name: Check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 collector/watchdog.py /tmp/data
+      - name: Restart collector if stopped
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh run list -w collect.yml -R ${{ github.repository }} --json status -q '[.[] | select(.status=="in_progress" or .status=="queued" or .status=="pending")] | length')
+          if [ "$n" = "0" ]; then echo "сборщик не работает — запускаем"; gh workflow run collect.yml --ref main -R ${{ github.repository }}; fi

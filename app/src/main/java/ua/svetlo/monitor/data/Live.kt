@@ -15,8 +15,10 @@ import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 
-/** Откуда берём графики: ветка data репозитория, её каждые 10 минут обновляет сборщик (collector/). */
+/** Откуда берём графики: сборщик (collector/) каждую минуту кладёт их на наш сервер Cloudflare и в ветку data. */
 object DataSource {
+    /** Сервер Cloudflare: свежие графики через ~20 секунд после сбора (кеш GitHub — до 10 минут). */
+    const val Fast = "https://svetlyachok-pins.svetlyachok.workers.dev/data/v1/"
     /** GitHub Pages из ветки data (CDN, рассчитан на раздачу), запасной вариант — raw.githubusercontent. */
     val Bases = listOf(
         "https://orlandooos.github.io/svetlyachok/v1/",
@@ -167,7 +169,7 @@ class ScheduleStore(private val dir: File) {
 
     private fun download(name: String): String {
         var last: Exception? = null
-        for (base in DataSource.Bases) {
+        for (base in listOf(DataSource.Fast) + DataSource.Bases) {
             val c = URL(base + name + "?t=" + System.currentTimeMillis() / 60000).openConnection() as HttpURLConnection
             c.connectTimeout = 15000; c.readTimeout = 20000
             c.setRequestProperty("User-Agent", "Svetlyachok-Android")
@@ -251,7 +253,10 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
         val data = store.region(region)
         val mode = data?.mode ?: sum?.mode ?: RegionMode.Unknown
         val updated = data?.checkedAt ?: sum?.checkedAt
-        if (mode == RegionMode.Emergency || mode == RegionMode.Blackout) {
+        // Аварийные: график показываем как обычно (у многих свет всё равно идёт по нему), но с пометкой
+        // «графік може не діяти». Без графика или при блэкауте — только режим.
+        val emergency = mode == RegionMode.Emergency
+        if (mode == RegionMode.Blackout || (emergency && !schedule(region, queue, at.toLocalDate()).known)) {
             return NowState(mode.type, lightOn = null, nextChange = null, since = null, nextWindow = null, factReports = null,
                 schedulesSuspended = true, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
         }
@@ -271,10 +276,10 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
         var e = s
         while (e < all.size && all[e] == Slot.Off) e++
         val window = if (s < all.size) slotStart(at.toLocalDate(), s) to slotStart(at.toLocalDate(), e) else null
-        val type = if (window == null && !off) OutageType.None else OutageType.Stabilization
+        val type = if (emergency) OutageType.Emergency else if (window == null && !off) OutageType.None else OutageType.Stabilization
         return NowState(type, lightOn = !off, nextChange = if (window == null && !off) null else next,
             since = if (off) slotStart(at.toLocalDate(), s) else null, nextWindow = window, factReports = null,
-            schedulesSuspended = false, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
+            schedulesSuspended = emergency, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
     }
 
     override fun queueOffNow(region: String, queue: String, at: LocalDateTime): OutageType {

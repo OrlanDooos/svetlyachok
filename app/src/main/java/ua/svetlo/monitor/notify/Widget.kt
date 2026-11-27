@@ -42,6 +42,8 @@ class Widget : AppWidgetProvider() {
                     val st = app.repository.now(a.region, a.queue, now)
                     val (bg, title) = when {
                         st.type == OutageType.Blackout -> R.drawable.widget_bg_black to tr("Блекаут", "Блэкаут")
+                        st.type == OutageType.Emergency && st.lightOn == true -> R.drawable.widget_bg_red to tr("За графіком світло є", "По графику свет есть")
+                        st.type == OutageType.Emergency && st.lightOn == false -> R.drawable.widget_bg_red to tr("За графіком світла немає", "По графику света нет")
                         st.type == OutageType.Emergency -> R.drawable.widget_bg_red to tr("Аварійні відключення", "Аварийные отключения")
                         st.lightOn == null -> R.drawable.widget_bg_grey to tr("Немає графіка", "Нет графика")
                         st.lightOn -> R.drawable.widget_bg_green to tr("Світло є", "Свет есть")
@@ -49,7 +51,8 @@ class Widget : AppWidgetProvider() {
                     }
                     val sub = st.nextChange?.let {
                         (if (st.lightOn == true) tr("Вимкнуть о ", "Выключат в ") else tr("Увімкнуть о ", "Включат в ")) + it.hm() + " · " + formatDuration(between(now, it))
-                    } ?: if (st.schedulesSuspended) tr("Графіки не діють", "Графики не действуют") else ""
+                    }?.let { if (st.schedulesSuspended) "$it · " + tr("графік може не діяти", "график может не действовать") else it }
+                        ?: if (st.schedulesSuspended) tr("Графіки не діють", "Графики не действуют") else ""
                     val v = RemoteViews(ctx.packageName, R.layout.widget)
                     v.setInt(R.id.widget_root, "setBackgroundResource", bg)
                     v.setTextViewText(R.id.widget_title, title)
