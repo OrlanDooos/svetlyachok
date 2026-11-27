@@ -20,3 +20,25 @@ CREATE TABLE IF NOT EXISTS files (
   body    TEXT NOT NULL,
   updated INTEGER NOT NULL
 );
+
+-- Личный Telegram-бот: владелец, webhook, состояние тревог.
+CREATE TABLE IF NOT EXISTS kv (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
+
+-- Отзывы из приложения (копия того, что ушло в Telegram; sent=0 — бот ещё не был настроен).
+CREATE TABLE IF NOT EXISTS feedback (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  install TEXT NOT NULL,
+  ip_hash TEXT NOT NULL,
+  text    TEXT NOT NULL,
+  contact TEXT,
+  app     TEXT,
+  region  TEXT,
+  device  TEXT,
+  created INTEGER NOT NULL,
+  sent    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS feedback_install_day ON feedback(install, created);
+CREATE INDEX IF NOT EXISTS feedback_ip_day ON feedback(ip_hash, created);

@@ -2,7 +2,10 @@
 // GET  /confirmed?region=zaporizhia                              — дома, подтверждённые 2+ установками.
 // PUT  /data/v1/<файл>.json  — сборщик (GitHub Actions, вход по OIDC-токену GitHub) кладёт свежие графики.
 // GET  /data/v1/<файл>.json  — приложение читает их (кеш 20 с), без 5-минутной задержки raw.githubusercontent.
+// POST /feedback, /tg/*, /admin/*, cron — личный Telegram-бот владельца, см. telegram.js.
 // Наружу отдаём только адрес и усреднённую точку: id установок и хеши IP не публикуются.
+
+import { route as botRoute, scheduled as botScheduled } from "./telegram.js";
 
 const REGIONS = new Set(["zaporizhia"]);
 const MIN_CONFIRM = 2;          // столько разных установок должны отметить одно место
@@ -117,6 +120,11 @@ export default {
       const { results } = await env.DB.prepare("SELECT install, address, lon, lat FROM pins WHERE region=?1").bind(region).all();
       return json({ region, minConfirm: MIN_CONFIRM, houses: confirmed(results) });
     }
+    const bot = await botRoute(req, env, url, json);
+    if (bot) return bot;
     return json({ error: "not found" }, 404);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(botScheduled(env, env.PUBLIC_URL || "https://svetlyachok-pins.svetlyachok.workers.dev"));
   },
 };
