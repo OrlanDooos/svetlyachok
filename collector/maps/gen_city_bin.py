@@ -105,13 +105,26 @@ def addr_inside(g):
             for x, y, s in grid.get((gx, gy), ()):
                 if x0 <= x <= x1 and y0 <= y <= y1 and poly_has(g, x, y): found.add(s)
     return found.pop() if len(found) == 1 else None
-from_points = 0
+# associatedStreet: дом-участник с номером, но без addr:street берёт улицу из названия отношения.
+assoc_street = {}
+asf = os.path.join(tiles, 'assoc.json')
+if os.path.exists(asf):
+    for r in json.load(open(asf)).get('elements', []):
+        name = r.get('tags', {}).get('name')
+        if not name: continue
+        for m in r.get('members', []):
+            if m['type'] == 'way' and m.get('role') in ('house', 'building'):
+                # Дом в двух связках с разными улицами — неоднозначно, не берём.
+                assoc_street[m['ref']] = name if assoc_street.get(m['ref'], name) == name else None
+from_points = from_assoc = 0
 blds = []
 for e in B.values():
     g = e['geometry']; cx = sum(p['lon'] for p in g)/len(g); cy = sum(p['lat'] for p in g)/len(g)
     if not inside(cx, cy): continue
     t = e.get('tags', {})
     st, hn = t.get('addr:street'), t.get('addr:housenumber')
+    if hn and not st and assoc_street.get(e['id']):
+        st = assoc_street[e['id']]; from_assoc += 1
     pts = simplify([dm(p['lon'], p['lat']) for p in g])
     if len(pts) < 3: continue
     addr = fix_addr(st) + ', ' + hn if st and hn else None
@@ -146,4 +159,4 @@ with open(out, 'wb') as f:
     f.write(struct.pack('>i', len(lines)))
     for k, si, pts in lines:
         f.write(struct.pack('>bi', k, si)); pts_out(pts)
-print(from_points, 'addresses from points;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')
+print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')

@@ -53,6 +53,8 @@ def build(cid, rel, bbox, n, out_dir):
             open(os.path.join(tiles, f"r_{i}_{j}.json"), "wb").write(overpass("(" + ROADS.format(bb=bb) + ");out geom tags;"))
     open(os.path.join(tiles, "addr_nodes.json"), "wb").write(overpass(
         f'(node["addr:housenumber"]({s},{w},{nn},{e});relation["building"]["addr:housenumber"]({s},{w},{nn},{e}););out center tags;'))
+    # Связки «улица → дома» (associatedStreet): номер дома стоит на здании, а улица — на отношении.
+    open(os.path.join(tiles, "assoc.json"), "wb").write(overpass(f"area(id:{3600000000 + rel})->.a;relation[type=associatedStreet](area.a);out body;"))
     target = os.path.join(out_dir, f"{cid}.bin")
     subprocess.run([sys.executable, os.path.join(HERE, "gen_city_bin.py"), tiles, target, os.path.join(HERE, f"{cid}.meta.json")], check=True)
     return target
