@@ -53,6 +53,8 @@ data class RegionData(
     /** Недельный шаблон оператора (пн…нд), если он его публикует. */
     val week: Map<String, List<String>>,
     val hash: String?, val changedAt: OffsetDateTime?, val checkedAt: OffsetDateTime?,
+    /** false — источник даёт только режим области, без графика по очередям. */
+    val queueSchedules: Boolean = true,
 )
 
 /** Кэш на диске + загрузка из сети. Всё, что видит интерфейс, читается из кэша. */
@@ -219,6 +221,7 @@ class ScheduleStore(private val dir: File) {
                 o.getString("id"), o.optString("name"), o.optString("operator"), o.optString("source"), RegionMode.of(o.optString("mode")),
                 o.optString("attention").takeIf { it.isNotEmpty() && it != "null" }, o.optString("updatedAtSource").takeIf { it.isNotEmpty() && it != "null" },
                 days, week, o.optString("hash").ifEmpty { null }, time(o, "changedAt"), time(o, "checkedAt"),
+                queueSchedules = o.optBoolean("queueSchedules", true),
             )
         }
     }
@@ -263,6 +266,9 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
                 schedulesSuspended = true, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
         }
         val today = schedule(region, queue, at.toLocalDate())
+        if (!today.known && data?.queueSchedules == false) {
+            return NowState(mode.type, null, null, null, null, null, false, data.attention, updated, data.operator, regionOnly = true)
+        }
         if (!today.known) {
             return NowState(OutageType.NoData, null, null, null, null, null, false, data?.attention, updated, data?.operator ?: sum?.operator)
         }
@@ -286,10 +292,12 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
 
     override fun queueOffNow(region: String, queue: String, at: LocalDateTime): OutageType {
         val mode = summary(region)?.mode ?: RegionMode.Unknown
-        if (mode == RegionMode.Emergency || mode == RegionMode.Blackout) return mode.type
+        if (mode == RegionMode.Blackout) return mode.type
         val d = schedule(region, queue, at.toLocalDate())
-        if (!d.known) return OutageType.NoData
-        return if (d.slots[slotAt(at)] == Slot.Off) OutageType.Stabilization else OutageType.None
+        // Аварийные: дома без света по графику — красные, со светом по графику — зелёные (график может не действовать).
+        if (!d.known) return if (mode == RegionMode.Emergency) OutageType.Emergency else OutageType.NoData
+        val off = d.slots[slotAt(at)] == Slot.Off
+        return if (off) (if (mode == RegionMode.Emergency) OutageType.Emergency else OutageType.Stabilization) else OutageType.None
     }
 
     override fun powerWindows(region: String, queue: String, date: LocalDate): List<PowerWindow> {
