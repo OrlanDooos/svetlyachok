@@ -20,21 +20,25 @@ for f in glob.glob(os.path.join(tiles, 'r_*.json')):
         if e['type'] == 'way' and 'geometry' in e: L[e['id']] = e
 # Граница города: собираем внешние кольца из путей отношения.
 bd = json.load(open(os.path.join(tiles, 'boundary.json')))['elements'][0]
-segs = [[(p['lon'], p['lat']) for p in m['geometry']] for m in bd['members'] if m['type'] == 'way' and m.get('role') == 'outer' and 'geometry' in m]
-rings = []
-while segs:
-    ring = segs.pop(0)
-    changed = True
-    while changed and ring[0] != ring[-1]:
-        changed = False
-        for i, s in enumerate(segs):
-            if s[0] == ring[-1]: ring += s[1:]
-            elif s[-1] == ring[-1]: ring += s[::-1][1:]
-            elif s[-1] == ring[0]: ring = s[:-1] + ring
-            elif s[0] == ring[0]: ring = s[::-1][:-1] + ring
-            else: continue
-            segs.pop(i); changed = True; break
-    rings.append(ring)
+def join_rings(segs):
+    """Склеивает пути отношения в замкнутые кольца (по совпадающим концам)."""
+    segs = [list(s) for s in segs]
+    out = []
+    while segs:
+        ring = segs.pop(0)
+        changed = True
+        while changed and ring[0] != ring[-1]:
+            changed = False
+            for i, s in enumerate(segs):
+                if s[0] == ring[-1]: ring += s[1:]
+                elif s[-1] == ring[-1]: ring += s[::-1][1:]
+                elif s[-1] == ring[0]: ring = s[:-1] + ring
+                elif s[0] == ring[0]: ring = s[::-1][:-1] + ring
+                else: continue
+                segs.pop(i); changed = True; break
+        out.append(ring)
+    return out
+rings = join_rings([(p['lon'], p['lat']) for p in m['geometry']] for m in bd['members'] if m['type'] == 'way' and m.get('role') == 'outer' and 'geometry' in m)
 def inside(x, y):
     c = False
     for r in rings:
@@ -224,6 +228,69 @@ for e in L.values():
     if not any(inside(p['lon'], p['lat']) for p in g[::max(1, len(g)//4)]): continue
     pts = simplify([dm(p['lon'], p['lat']) for p in g], 15)
     if len(pts) >= 2: lines.append((KIND[k], S(t.get('name')), pts))
+# Большая вода из мультиполигонов (water.json): Днепр, водохранилища, каналы. Внешние кольца обрезаем по bbox карты,
+# острова (inner) вшиваем в контур своего внешнего кольца «мостиком» туда-обратно с обратным обходом:
+# при заливке по правилу non-zero они остаются дырами, и старым версиям приложения ничего менять не нужно.
+def clip(ring, x0, y0, x1, y1):
+    """Сазерленд-Ходжман по прямоугольнику; ring — список (x, y) без повтора первой точки."""
+    def cut(pts, inside_, cross):
+        res = []
+        for i, cur in enumerate(pts):
+            prev = pts[i - 1]
+            if inside_(cur):
+                if not inside_(prev): res.append(cross(prev, cur))
+                res.append(cur)
+            elif inside_(prev): res.append(cross(prev, cur))
+        return res
+    def at_x(x): return lambda a, b: (x, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]))
+    def at_y(y): return lambda a, b: (a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]), y)
+    for ins, cr in ((lambda p: p[0] >= x0, at_x(x0)), (lambda p: p[0] <= x1, at_x(x1)),
+                    (lambda p: p[1] >= y0, at_y(y0)), (lambda p: p[1] <= y1, at_y(y1))):
+        ring = cut(ring, ins, cr)
+        if not ring: break
+    return [(int(round(x)), int(round(y))) for x, y in ring]
+def area2(r): return sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(r, r[1:] + r[:1]))
+def in_ring(pt, r):
+    x, y = pt; c = False; j = len(r) - 1
+    for i in range(len(r)):
+        (xi, yi), (xj, yj) = r[i], r[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi: c = not c
+        j = i
+    return c
+wf = os.path.join(tiles, 'water.json')
+water_polys = 0
+if os.path.exists(wf):
+    xs = [x for r in rings for x, _ in r]; ys = [y for r in rings for _, y in r]
+    pad = 0.01
+    bx0, by0 = dm(min(xs) - pad, max(ys) + pad); bx1, by1 = dm(max(xs) + pad, min(ys) - pad)
+    for rel in json.load(open(wf)).get('elements', []):
+        if rel.get('type') != 'relation': continue
+        def ring_set(role):
+            out = []
+            for r in join_rings([(p['lon'], p['lat']) for p in m['geometry']] for m in rel['members']
+                                if m['type'] == 'way' and m.get('role', 'outer') == role and m.get('geometry')):
+                if len(r) < 4 or r[0] != r[-1]: continue  # незамкнутое кольцо (часть вне выгрузки) пропускаем
+                r = clip([dm(lon, lat) for lon, lat in r[:-1]], bx0, by0, bx1, by1)
+                if len(r) >= 3 and abs(area2(r)) > 2 * 400 * 100:  # меньше 400 м² не рисуем
+                    out.append(r)
+            return out
+        outers = ring_set('outer')
+        if not outers: continue
+        inners = ring_set('inner')
+        for o in outers:
+            if area2(o) < 0: o.reverse()
+            own = [r for r in inners if in_ring(r[0], o)]
+            pts = simplify(o + [o[0]], 15) if len(o) > 3 else o
+            for r in own:
+                if area2(r) > 0: r.reverse()
+                r = simplify(r + [r[0]], 15) if len(r) > 3 else r
+                if len(r) < 3: continue
+                # мостик от ближайшей вершины внешнего контура к острову и обратно
+                k = min(range(len(pts)), key=lambda i: (pts[i][0] - r[0][0]) ** 2 + (pts[i][1] - r[0][1]) ** 2)
+                pts = pts[:k + 1] + r + [r[0]] + pts[k:]
+            if len(pts) >= 3:
+                lines.append((KIND['water'], S(rel.get('tags', {}).get('name')), pts)); water_polys += 1
+print(water_polys, 'water polygons from relations')
 meta.update({'origin': [lat0, lon0], 'buildings': len(blds), 'lines': len(lines)})
 with open(out, 'wb') as f:
     m = json.dumps(meta, ensure_ascii=False).encode()
@@ -232,6 +299,12 @@ with open(out, 'wb') as f:
     for s in strings:
         b = s.encode(); f.write(struct.pack('>H', len(b))); f.write(b)
     def pts_out(pts):
+        # Шаг между точками хранится в short (±3,2 км в дм): длинные отрезки делим, чтобы не обрезать.
+        dense = [pts[0]]
+        for (a, b), (c, d) in zip(pts, pts[1:]):
+            n = int(max(abs(c - a), abs(d - b)) // 32000) + 1
+            dense += [(a + (c - a) * i // n, b + (d - b) * i // n) for i in range(1, n)] + [(c, d)]
+        pts = dense[:65535]
         f.write(struct.pack('>H', len(pts))); f.write(struct.pack('>ii', *pts[0]))
         for (a, b), (c, d) in zip(pts, pts[1:]):
             f.write(struct.pack('>hh', max(-32768, min(32767, c - a)), max(-32768, min(32767, d - b))))

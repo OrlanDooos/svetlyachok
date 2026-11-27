@@ -62,11 +62,14 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         LiveRepository(store)
     }
 
-    private fun shot(name: String, route: String, s: Settings = on, fontScale: Float? = null) {
+    private fun shot(name: String, route: String, s: Settings = on, fontScale: Float? = null, waitNetMs: Long = 0) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         if (fontScale != null) RuntimeEnvironment.setFontScale(fontScale)
         compose.setContent { SvetloContent(repo, s, now, {}, route) }
         compose.mainClock.advanceTimeBy(1500)
+        // Тайлы Visicom грузятся по сети в фоне: ждём реальное время (только если в сборке есть ключ).
+        var waited = 0L
+        while (waited < waitNetMs) { Thread.sleep(500); compose.mainClock.advanceTimeBy(500); waited += 500 }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/${device}_$name.png")
     }
 
@@ -90,6 +93,8 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
     @Test fun sources() = shot("sources", Routes.Sources)
     @Test fun notif() = shot("notif", Routes.Notif)
     @Test fun cityZaporizhzhia() = shot("city_zp", Routes.city(id = "zaporizhzhia"), on.copy(selectedId = "parents"))
+    @Test fun cityZaporizhzhiaVisicom() = shot("city_zp_visicom", Routes.city(id = "zaporizhzhia"), on.copy(selectedId = "parents"),
+        waitNetMs = if (ua.svetlo.monitor.data.VisicomTiles.enabled) 8000 else 0)
     @Test fun cityZaporizhzhiaDark() = shot("city_zp_dark", Routes.city(id = "zaporizhzhia"), on.copy(selectedId = "parents", theme = ThemeMode.Dark))
     @Test fun homeRussian() = shot("home_ru", Routes.Home, on.copy(lang = Lang.Ru))
 }

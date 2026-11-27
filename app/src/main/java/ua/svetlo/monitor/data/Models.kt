@@ -168,6 +168,12 @@ data class CityMap(
         return (originLon + x / kx) to (originLat - y / 110540.0)
     }
 
+    /** (долгота, широта) → метры карты, как dm() в gen_city_bin.py (только в метрах). */
+    fun fromLonLat(lon: Double, lat: Double): Pair<Float, Float> {
+        val kx = 111320.0 * kotlin.math.cos(Math.toRadians(originLat))
+        return ((lon - originLon) * kx).toFloat() to ((originLat - lat) * 110540.0).toFloat()
+    }
+
     fun ringLonLat(b: Building): List<Pair<Double, Double>> = (0 until b.points.size / 2).map { toLonLat(b.points[2 * it], b.points[2 * it + 1]) }
 
     /** Точка внутри контура дома: центр, а если он снаружи (дом буквой Г), — первая подходящая точка сетки. */
