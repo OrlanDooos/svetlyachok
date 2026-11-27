@@ -34,7 +34,9 @@ def main():
     for name in names:
         body = open(os.path.join(root, name), "rb").read()
         req = urllib.request.Request(f"{BASE}/data/v1/{name}", data=body, method="PUT",
-                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                                              # Cloudflare отклоняет стандартный User-Agent Python-urllib (ошибка 1010).
+                                              "User-Agent": "svetlyachok-collector"})
         try:
             urllib.request.urlopen(req, timeout=20).read()
         except Exception as e:
