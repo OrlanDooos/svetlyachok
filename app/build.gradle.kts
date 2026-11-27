@@ -14,8 +14,8 @@ android {
         applicationId = "ua.svetlo.monitor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.4.2"
+        versionCode = 18
+        versionName = "1.4.3"
         // Ключ Visicom Data API (адрес дома по нажатию). Не в репозитории: свойство svetlo.visicomKey,
         // переменная SVETLO_VISICOM_KEY или строка visicomKey в keystore.properties. Без ключа функция выключена.
         val visicomKey = (findProperty("svetlo.visicomKey") as String?) ?: System.getenv("SVETLO_VISICOM_KEY")
