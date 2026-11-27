@@ -810,7 +810,9 @@ def ocr_schedule(img_bytes, layout):
     boxes = None
     if layout == "chernihiv":
         boxes = color_boxes(img, lambda p: p[0] > 220 and 150 < p[1] < 215 and p[2] < 180)
-    for thr in range(80, 200, 20):
+    # жирный шрифт Чернігова при высоком пороге «заплывает» (15 читается как 16) — там пороги ниже
+    thrs = range(50, 110, 10) if layout == "chernihiv" else range(80, 200, 20)
+    for thr in thrs:
         for width in (1600, 2400):
             try:
                 words = ocr_words(img, thr, width=width)
