@@ -122,12 +122,12 @@ fun HomeScreen(
             SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Завтра", "Завтра"), onSchedule)
             val frac = (now.hour * 60 + now.minute) / 1440f
             if (state.schedulesSuspended) {
-                Text(tr("Поки діють аварійні відключення, графік черги не застосовується.", "Пока действуют аварийные отключения, график очереди не применяется."), style = Type.small, color = Svetlo.colors.ink2)
+                Text(tr("Діють аварійні відключення: графік може не діяти, світло можуть вимкнути й поза ним.", "Действуют аварийные отключения: график может не действовать, свет могут выключить и вне его."), style = Type.small, color = Svetlo.colors.redInk)
             }
             if (!today.known) {
                 Text(tr("Графік на сьогодні ще не опубліковано.", "График на сегодня ещё не опубликован."), style = Type.small, color = Svetlo.colors.ink2)
             }
-            DayBar(today.slots, nowFraction = frac, override = if (state.schedulesSuspended || !today.known) Svetlo.colors.track else null)
+            DayBar(today.slots, nowFraction = frac, override = if ((state.schedulesSuspended && state.lightOn == null) || !today.known) Svetlo.colors.track else null)
             HourLabels()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LegendItem(Status.Green, tr("Світло є", "Свет есть")); LegendItem(Status.Yellow, tr("Відключення", "Отключение")); LegendItem(Status.Maybe, tr("Можливо", "Возможно"))
@@ -150,9 +150,9 @@ fun HomeScreen(
         val att = state.attention
         if (state.schedulesSuspended || !att.isNullOrBlank()) {
             SCard(color = if (state.schedulesSuspended) Svetlo.colors.redSoft else Svetlo.colors.surface) {
-                Text(if (state.schedulesSuspended) tr("Чому графік не діє?", "Почему график не действует?") else tr("Повідомлення оператора", "Сообщение оператора"),
+                Text(if (state.schedulesSuspended) tr("Чому графік може не діяти?", "Почему график может не действовать?") else tr("Повідомлення оператора", "Сообщение оператора"),
                     style = Type.section, color = Svetlo.colors.ink, modifier = Modifier.semantics { heading() })
-                Text(att ?: tr("Оператор оголосив аварійні відключення. Поки вони діють, графіки черг не застосовуються.", "Оператор объявил аварийные отключения. Пока они действуют, графики очередей не применяются."),
+                Text(att ?: tr("Оператор оголосив аварійні відключення. Поки вони діють, світло можуть вимикати поза графіком черги.", "Оператор объявил аварийные отключения. Пока они действуют, свет могут выключать вне графика очереди."),
                     style = Type.small.copy(lineHeight = 21.sp), color = Svetlo.colors.ink2)
                 Text(tr("Джерело: ${state.operator ?: "обленерго"}", "Источник: ${state.operator ?: "облэнерго"}"), style = Type.caption, color = Svetlo.colors.muted,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSources).padding(vertical = 4.dp))
@@ -228,8 +228,9 @@ private fun StatusChips(s: Settings, state: NowState, onRefresh: () -> Unit) {
         Pill(tr("Черга ${s.selected.queue}", "Очередь ${s.selected.queue}"))
         Pill(s.selected.cityName, icon = Icons.Rounded.LocationOn, fg = c.ink2)
         if (state.schedulesSuspended) {
-            Pill(tr("Графіки не діють", "Графики не действуют"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
-        } else {
+            Pill(if (state.lightOn != null) tr("Графік може не діяти", "График может не действовать") else tr("Графіки не діють", "Графики не действуют"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
+        }
+        run {
             Text(tr("оновлено ", "обновлено ") + ago(state.updatedAt), style = Type.caption, color = c.muted,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = tr("Оновити", "Обновить"), onClick = onRefresh).padding(horizontal = 4.dp, vertical = 6.dp))
         }
@@ -248,6 +249,8 @@ private fun StatusCard(state: NowState, now: LocalDateTime, supported: Boolean, 
     }
     val title = when {
         state.type == OutageType.Blackout -> tr("Блекаут", "Блэкаут")
+        state.type == OutageType.Emergency && state.lightOn == true -> tr("За графіком світло є", "По графику свет есть")
+        state.type == OutageType.Emergency && state.lightOn == false -> tr("За графіком світла немає", "По графику света нет")
         state.type == OutageType.Emergency -> tr("Аварійні відключення", "Аварийные отключения")
         state.lightOn == null -> tr("Немає графіка", "Нет графика")
         state.lightOn -> tr("Світло є", "Свет есть")
@@ -260,6 +263,7 @@ private fun StatusCard(state: NowState, now: LocalDateTime, supported: Boolean, 
                 Text(t, style = Type.display, color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
             }
             when {
+                state.schedulesSuspended && state.lightOn != null -> { ScheduledBlock(state, now); EmergencyNote() }
                 state.schedulesSuspended -> EmergencyBlock(state, color)
                 state.lightOn == null -> Text(
                     if (!supported) tr("Для цієї області ми ще не збираємо графіки. Щойно джерело запрацює, статус з'явиться тут.", "Для этой области мы ещё не собираем графики. Как только источник заработает, статус появится здесь.")
@@ -283,6 +287,13 @@ private fun ScheduledBlock(state: NowState, now: LocalDateTime) {
     state.nextWindow?.let { (a, b) ->
         Pill(tr("${a.hm()}–${b.hm()} · стабілізаційне", "${a.hm()}–${b.hm()} · стабилизационное"), bg = c.yellowSoft, fg = c.yellowInk, border = null, dot = Status.Yellow)
     }
+}
+
+/** Аварийные при известном графике: график показан, но может не действовать. */
+@Composable
+private fun EmergencyNote() {
+    val c = Svetlo.colors
+    Pill(tr("Аварійні відключення · графік може не діяти", "Аварийные отключения · график может не действовать"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
 }
 
 @Composable
@@ -322,6 +333,7 @@ private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddres
                 Text(when (state.lightOn) { true -> tr("Світло є", "Свет есть"); false -> tr("Світла немає", "Света нет"); null -> tr("Невідомо", "Неизвестно") }, style = Type.display.copy(fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.ExtraBold), color = Color.White)
             }
             val line1 = when {
+                state.schedulesSuspended && state.lightOn != null -> (if (state.lightOn == true) tr("Вимкнуть о ${state.nextChange?.hm()}", "Выключат в ${state.nextChange?.hm()}") else tr("Увімкнуть о ${state.nextChange?.hm()}", "Включат в ${state.nextChange?.hm()}")) + tr(" за графіком · аварійні, графік може не діяти", " по графику · аварийные, график может не действовать")
                 state.schedulesSuspended -> if (state.type == OutageType.Blackout) tr("Блекаут", "Блэкаут") else tr("Аварійні відключення", "Аварийные отключения")
                 state.lightOn == null -> tr("Графіка ще немає", "Графика ещё нет")
                 state.type == OutageType.None -> tr("Відключень немає", "Отключений нет")
@@ -333,7 +345,7 @@ private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddres
                 Text(tr("Через ${formatDuration(between(now, it))}", "Через ${formatDuration(between(now, it))}"), style = Type.bodyBold.copy(fontSize = 22.sp, lineHeight = 28.sp), color = Color.White)
             }
         }
-        state.nextWindow?.takeIf { !state.schedulesSuspended }?.let { (a, b) ->
+        state.nextWindow?.takeIf { !state.schedulesSuspended || state.lightOn != null }?.let { (a, b) ->
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).border(3.dp, c.ink, RoundedCornerShape(28.dp)).padding(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(if (state.lightOn == true) tr("Світла не буде", "Света не будет") else tr("Зараз без світла", "Сейчас без света"), style = Type.bodyBold.copy(fontSize = 20.sp), color = c.ink)
                 Text("${a.hm()} — ${b.hm()}", style = Type.bigNumber.copy(fontSize = 34.sp), color = c.ink)

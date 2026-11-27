@@ -198,7 +198,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRe
             }
         }
         if (mode == ua.svetlo.monitor.data.RegionMode.Emergency || mode == ua.svetlo.monitor.data.RegionMode.Blackout) {
-            Pill(tr("Зараз графіки не діють: аварійні відключення", "Сейчас графики не действуют: аварийные отключения"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
+            Pill(if (mode == ua.svetlo.monitor.data.RegionMode.Blackout) tr("Зараз графіки не діють: блекаут", "Сейчас графики не действуют: блэкаут") else tr("Аварійні відключення: графік може не діяти", "Аварийные отключения: график может не действовать"), bg = c.redSoft, fg = c.redInk, border = null, dot = Status.Red, blink = true)
         }
     }
     if (w.twoPane) {

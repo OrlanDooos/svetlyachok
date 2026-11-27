@@ -168,7 +168,7 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
             if (s.notifyEmergency && was != null && was != mode && (mode == RegionMode.Emergency || mode == RegionMode.Blackout)) {
                 Notifications.show(applicationContext, 200 + i, Notifications.EMERGENCY,
                     if (mode == RegionMode.Blackout) tr("Блекаут", "Блэкаут") else tr("Аварійні відключення", "Аварийные отключения"),
-                    "${a.labelName}: " + (repo.region(a.region)?.attention?.take(220) ?: tr("графіки тимчасово не діють", "графики временно не действуют")))
+                    "${a.labelName}: " + (repo.region(a.region)?.attention?.take(220) ?: tr("аварійні відключення, графік може не діяти", "аварийные отключения, график может не действовать")))
             } else if (s.notifyChanges && a.region in changed && beforeSlots[a.id] != afterSlots[a.id] && afterSlots[a.id]?.any { it != null } == true) {
                 val idx = dates.indices.firstOrNull { beforeSlots[a.id]?.getOrNull(it) != afterSlots[a.id]?.getOrNull(it) } ?: 0
                 val day = if (idx == 0) tr("сьогодні", "сегодня") else tr("завтра", "завтра")

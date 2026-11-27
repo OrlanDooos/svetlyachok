@@ -258,17 +258,38 @@ def telegram_posts(channel, hours=36, max_pages=8):
     return sorted(posts.values(), key=lambda p: p[0])
 
 
-def telegram_gpv(channels, source_url):
+OBLASTS = r"(вінниц|волин|дніпропетровськ|донецьк|житомир|закарпат|запорі|івано-франків|київськ|кіровоград|луганськ|львів|миколаїв|одес|полтав|рівнен|сумськ|тернопіл|харків|херсон|хмельниц|черкас|чернівец|чернігів)"
+
+
+def telegram_attention(posts, own, now=None):
+    """Объявление об аварийных отключениях за последние 12 часов (None — их нет или их отменили).
+
+    [own] — корень названия своей области: пост, где названы только другие области, пропускаем.
+    """
+    now = now or dt.datetime.now(KYIV)
+    attention = None
+    for when, text in posts:
+        if (now - when.astimezone(KYIV)) >= dt.timedelta(hours=12):
+            continue
+        low = text.lower()
+        named = set(re.findall(OBLASTS, low))
+        if named and own not in named:
+            continue
+        if detect_mode(text):
+            attention = clean_text(text)[:600]
+        elif lifted(text):
+            attention = None
+    return attention
+
+
+def telegram_gpv(channels, source_url, own):
     """Берём последний пост с ГПВ на каждую дату (более поздний пост заменяет ранний).
 
     Режим: последнее за 12 часов объявление об аварийных отключениях (ГАВ) включает «аварийные»,
     более позднее объявление об их отмене — выключает. Каналы читаем все сразу, по времени.
     """
-    if isinstance(channels, str):
-        channels = [channels]
     posts = sorted((p for ch in channels for p in telegram_posts(ch)), key=lambda p: p[0])
-    days, attention = {}, None
-    now = dt.datetime.now(KYIV)
+    days = {}
     for when, text in posts:
         local = when.astimezone(KYIV)
         if re.search(r"ГПВ|графік\w* погодинних", text, re.I):
@@ -276,12 +297,23 @@ def telegram_gpv(channels, source_url):
             sched = parse_text_schedule(text)
             if len(sched) >= 4:
                 days[date.isoformat()] = sched
-        if (now - local) < dt.timedelta(hours=12):
-            if detect_mode(text):
-                attention = clean_text(text)[:600]
-            elif lifted(text):
-                attention = None
-    return {"days": days, "attention": attention, "source": f"https://t.me/{channels[0]}"}
+    return {"days": days, "attention": telegram_attention(posts, own), "source": f"https://t.me/{channels[0]}"}
+
+
+def with_channel_attention(fn, channels, own):
+    """Сборщик с сайта + объявления об аварийных из официальных Telegram-каналов облэнерго."""
+    def run():
+        r = fn()
+        if not detect_mode(r.get("attention")):
+            try:
+                posts = sorted((p for ch in channels for p in telegram_posts(ch)), key=lambda p: p[0])
+                att = telegram_attention(posts, own)
+                if att:
+                    r["attention"] = att
+            except Exception as e:  # канал недоступен — режим определяем по сайту
+                log(f"  канал {channels}: {e}")
+        return r
+    return run
 
 
 # ------------------------------------------------------------------ регионы
@@ -291,9 +323,9 @@ REGIONS = [
     ("kyiv-city", "Київ", "ДТЕК Київські електромережі", lambda: dtek("dtek-kem.com.ua", "kyiv")),
     ("kyiv", "Київська область", "ДТЕК Київські регіональні електромережі", lambda: dtek("dtek-krem.com.ua", "kyiv-region")),
     ("dnipropetrovsk", "Дніпропетровська область", "ДТЕК Дніпровські електромережі", lambda: dtek("dtek-dnem.com.ua", "dnipro")),
-    ("odessa", "Одеська область", "ДТЕК Одеські електромережі", lambda: dtek("dtek-oem.com.ua", "odesa")),
-    ("lviv", "Львівська область", "Львівобленерго", lviv),
-    ("zaporizhia", "Запорізька область", "Запоріжжяобленерго", lambda: telegram_gpv(["zoe_alarm", "Zaporizhzhyaoblenergo_news"], "https://www.zoe.com.ua/")),
+    ("odessa", "Одеська область", "ДТЕК Одеські електромережі", with_channel_attention(lambda: dtek("dtek-oem.com.ua", "odesa"), ["DTEKOdeskiElektromerezhi"], "одес")),
+    ("lviv", "Львівська область", "Львівобленерго", with_channel_attention(lviv, ["lvivoblenergo"], "львів")),
+    ("zaporizhia", "Запорізька область", "Запоріжжяобленерго", lambda: telegram_gpv(["zoe_alarm", "Zaporizhzhyaoblenergo_news"], "https://www.zoe.com.ua/", "запорі")),
 ]
 
 

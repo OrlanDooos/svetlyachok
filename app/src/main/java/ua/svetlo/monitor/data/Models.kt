@@ -73,6 +73,7 @@ data class NowState(
     val nextWindow: Pair<LocalDateTime, LocalDateTime>?,
     /** Подтверждения «по факту». Показываем только в аварийном режиме и при блэкауте. */
     val factReports: Int?,
+    /** Аварийные отключения или блэкаут: график может не действовать (lightOn != null — показан график). */
     val schedulesSuspended: Boolean,
     /** Объявление оператора («Шановні клієнти!…»). */
     val attention: String? = null,

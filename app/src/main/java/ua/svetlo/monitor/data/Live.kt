@@ -253,7 +253,10 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
         val data = store.region(region)
         val mode = data?.mode ?: sum?.mode ?: RegionMode.Unknown
         val updated = data?.checkedAt ?: sum?.checkedAt
-        if (mode == RegionMode.Emergency || mode == RegionMode.Blackout) {
+        // Аварийные: график показываем как обычно (у многих свет всё равно идёт по нему), но с пометкой
+        // «графік може не діяти». Без графика или при блэкауте — только режим.
+        val emergency = mode == RegionMode.Emergency
+        if (mode == RegionMode.Blackout || (emergency && !schedule(region, queue, at.toLocalDate()).known)) {
             return NowState(mode.type, lightOn = null, nextChange = null, since = null, nextWindow = null, factReports = null,
                 schedulesSuspended = true, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
         }
@@ -273,10 +276,10 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
         var e = s
         while (e < all.size && all[e] == Slot.Off) e++
         val window = if (s < all.size) slotStart(at.toLocalDate(), s) to slotStart(at.toLocalDate(), e) else null
-        val type = if (window == null && !off) OutageType.None else OutageType.Stabilization
+        val type = if (emergency) OutageType.Emergency else if (window == null && !off) OutageType.None else OutageType.Stabilization
         return NowState(type, lightOn = !off, nextChange = if (window == null && !off) null else next,
             since = if (off) slotStart(at.toLocalDate(), s) else null, nextWindow = window, factReports = null,
-            schedulesSuspended = false, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
+            schedulesSuspended = emergency, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
     }
 
     override fun queueOffNow(region: String, queue: String, at: LocalDateTime): OutageType {
