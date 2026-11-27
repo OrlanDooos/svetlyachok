@@ -123,7 +123,8 @@ object MapAssets {
             val maxX = buildings.maxOf { it.maxX }; val maxY = buildings.maxOf { it.maxY }
             CityMap(meta.getString("id"), meta.getString("region"), meta.getString("city"), meta.getString("city_ru"),
                 meta.getString("district"), meta.getString("district_ru"), meta.optString("home"),
-                buildings, lines, minX, minY, maxX, maxY).also { synchronized(this) { cities[id] = it } }
+                buildings, lines, minX, minY, maxX, maxY,
+                meta.optJSONArray("origin")?.optDouble(0) ?: Double.NaN, meta.optJSONArray("origin")?.optDouble(1) ?: Double.NaN).also { synchronized(this) { cities[id] = it } }
         }
 
     const val HOME_ADDRESS = "вулиця Лєскова, 9"

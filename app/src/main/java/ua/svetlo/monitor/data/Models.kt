@@ -151,8 +151,29 @@ data class CityMap(
     val buildings: List<Building>,
     val lines: List<MapLine>,
     val minX: Float, val minY: Float, val maxX: Float, val maxY: Float,
+    /** Широта и долгота начала координат карты (meta.origin); NaN у старых файлов карт. */
+    val originLat: Double = Double.NaN, val originLon: Double = Double.NaN,
 ) {
     val city: String get() = tr(cityUk, cityRu)
+    val hasOrigin: Boolean get() = !originLat.isNaN() && !originLon.isNaN()
+
+    /** Метры карты → (долгота, широта). Обратное к dm() в collector/maps/gen_city_bin.py. */
+    fun toLonLat(x: Float, y: Float): Pair<Double, Double> {
+        val kx = 111320.0 * kotlin.math.cos(Math.toRadians(originLat))
+        return (originLon + x / kx) to (originLat - y / 110540.0)
+    }
+
+    fun ringLonLat(b: Building): List<Pair<Double, Double>> = (0 until b.points.size / 2).map { toLonLat(b.points[2 * it], b.points[2 * it + 1]) }
+
+    /** Точка внутри контура дома: центр, а если он снаружи (дом буквой Г), — первая подходящая точка сетки. */
+    fun insideLonLat(b: Building): Pair<Double, Double> {
+        if (b.contains(b.cx, b.cy)) return toLonLat(b.cx, b.cy)
+        for (i in 1..9) for (j in 1..9) {
+            val x = b.minX + (b.maxX - b.minX) * i / 10f; val y = b.minY + (b.maxY - b.minY) * j / 10f
+            if (b.contains(x, y)) return toLonLat(x, y)
+        }
+        return toLonLat(b.cx, b.cy)
+    }
     val district: String get() = tr(districtUk, districtRu)
 }
 

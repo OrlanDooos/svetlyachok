@@ -1,6 +1,7 @@
 package ua.svetlo.monitor.ui.screens
 
 import ua.svetlo.monitor.data.tr
+import ua.svetlo.monitor.data.Visicom
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -351,12 +352,20 @@ fun CityMapScreen(
     val ver by repo.version.collectAsState()
     LaunchedEffect(city.region) { repo.refreshAddresses(city.region) }
     val addrIdx = remember(ver, city.region) { repo.addresses(city.region) }
+    // Адреса из Visicom для домов без адреса в OSM: только те, на которые нажимали в этот раз (хранить их нельзя).
+    var visicomAddr by remember(city) { mutableStateOf(mapOf<Int, String>()) }
+    var lookingUp by remember(city) { mutableStateOf<Int?>(null) }
     // Очередь каждого дома — только по точному совпадению адреса со списками облэнерго.
-    val queueKeys = remember(city, addrIdx) {
+    val baseKeys = remember(city, addrIdx) {
         Array(city.buildings.size) { i -> val b = city.buildings[i]; if (b.critical) "crit" else addrIdx?.queuesFor(s.houseAddr[houseKey(city, b)] ?: b.address)?.joinToString(",") ?: "" }
     }
-    // Адрес дома: указанный жителем важнее адреса из OpenStreetMap.
-    fun addrOf(i: Int): String? = city.buildings[i].let { b -> s.houseAddr[houseKey(city, b)] ?: b.address }
+    val queueKeys = remember(baseKeys, visicomAddr) {
+        if (visicomAddr.isEmpty()) baseKeys else baseKeys.copyOf().also { k ->
+            visicomAddr.forEach { (i, a) -> if (k[i] == "") k[i] = addrIdx?.queuesFor(a)?.joinToString(",") ?: "" }
+        }
+    }
+    // Адрес дома: указанный жителем важнее адреса из OpenStreetMap, а тот — адреса из Visicom.
+    fun addrOf(i: Int): String? = city.buildings[i].let { b -> s.houseAddr[houseKey(city, b)] ?: b.address ?: visicomAddr[i] }
     val index = remember(city, queueKeys) { CityIndex(city, queueKeys) }
     val minute = now.withSecond(0).withNano(0)
     val keyColors = remember(ver, queueKeys, minute) {
@@ -371,6 +380,15 @@ fun CityMapScreen(
         mine.keys.firstOrNull()?.let { city.buildings[it] } ?: city.buildings.firstOrNull { it.address == city.homeAddress }
     }
     var picked by remember { mutableStateOf<Int?>(mine.keys.firstOrNull()) }
+    LaunchedEffect(picked, city) {
+        val i = picked ?: return@LaunchedEffect
+        val b = city.buildings[i]
+        if (!Visicom.enabled || !city.hasOrigin || b.critical || addrOf(i) != null) return@LaunchedEffect
+        lookingUp = i
+        val a = Visicom.addressOf(city.ringLonLat(b), city.insideLonLat(b))
+        if (a != null) visicomAddr = visicomAddr + (i to a)
+        if (lookingUp == i) lookingUp = null
+    }
     var query by remember { mutableStateOf("") }
     val w = LocalWindow.current
     val c = Svetlo.colors
@@ -511,7 +529,7 @@ fun CityMapScreen(
                     Modifier.width(if (w.shortHeight) 320.dp else 380.dp).fillMaxHeight().background(c.bg).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
+                    picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea, fromVisicom = addrOf(it) != null && addrOf(it) == visicomAddr[it], lookingUp = lookingUp == it) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
                         ?: Text(tr("Натисніть на будинок, щоб побачити адресу і чергу. Колір — чи є зараз світло за графіком.", "Нажмите на дом, чтобы увидеть адрес и очередь. Цвет — есть ли сейчас свет по графику."), style = Type.body, color = c.ink2)
                 }
             }
@@ -530,7 +548,7 @@ fun CityMapScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(5.dp).clip(CircleShape).background(c.line))
-                        picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
+                        picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea, fromVisicom = addrOf(it) != null && addrOf(it) == visicomAddr[it], lookingUp = lookingUp == it) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
                     }
                 }
                 if (picked == null && !w.useRail) Box(Modifier.height(BottomBarSpace))
@@ -554,6 +572,7 @@ private fun houseLook(repo: OutageRepository, region: String, queues: List<Strin
 private fun BuildingPanel(
     b: Building, address: String?, userSet: Boolean, city: CityMap, mine: ua.svetlo.monitor.data.Address?, queues: List<String>?, addrIdx: ua.svetlo.monitor.data.AddressIndex?,
     repo: OutageRepository, now: LocalDateTime, onMyHome: (String, CityMap, String?) -> Unit, onArea: () -> Unit,
+    fromVisicom: Boolean = false, lookingUp: Boolean = false,
     onSetAddress: (String?) -> Unit,
 ) {
     val c = Svetlo.colors
@@ -566,7 +585,10 @@ private fun BuildingPanel(
     val qs = mine?.let { listOf(it.queue) } ?: queues
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(address ?: tr("Адреса невідома", "Адрес неизвестен"), style = Type.h2, color = c.ink)
+            Text(address ?: if (lookingUp) tr("Шукаємо адресу…", "Ищем адрес…") else tr("Адреса невідома", "Адрес неизвестен"), style = Type.h2, color = c.ink)
+            if (fromVisicom) Text(Visicom.Attribution, style = Type.caption, color = c.muted, modifier = Modifier.clickable {
+                runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(Visicom.Site)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            })
             Text(
                 when {
                     b.critical -> tr("Об'єкт критичної інфраструктури", "Объект критической инфраструктуры")
@@ -605,7 +627,9 @@ private fun BuildingPanel(
     }
     Text(
         when {
-            address == null -> tr("У відкритих картах для цього будинку немає адреси, тому чергу не показуємо.", "В открытых картах у этого дома нет адреса, поэтому очередь не показываем.")
+            address == null && lookingUp -> tr("Шукаємо адресу цього будинку у Visicom…", "Ищем адрес этого дома в Visicom…")
+            address == null && !Visicom.enabled -> tr("У відкритих картах для цього будинку немає адреси, тому чергу не показуємо.", "В открытых картах у этого дома нет адреса, поэтому очередь не показываем.")
+            address == null -> tr("Для цього будинку немає точної адреси ні у відкритих картах, ні у Visicom, тому чергу не показуємо.", "Для этого дома нет точного адреса ни в открытых картах, ни в Visicom, поэтому очередь не показываем.")
             addrIdx == null -> tr("Для цього міста ще немає переліку адрес за чергами. Свою чергу можна дізнатися на сайті оператора.", "Для этого города ещё нет списка адресов по очередям. Свою очередь можно узнать на сайте оператора.")
             else -> tr("Цієї адреси немає в переліках обленерго для населення. Свою чергу можна уточнити на сайті оператора.", "Этого адреса нет в списках облэнерго для населения. Свою очередь можно уточнить на сайте оператора.")
         }, style = Type.small, color = c.ink2,

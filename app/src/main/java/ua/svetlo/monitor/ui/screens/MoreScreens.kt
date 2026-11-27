@@ -164,8 +164,8 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
     }
     val about: @Composable () -> Unit = {
         Text(
-            tr("Світлячок ${BuildConfig.VERSION_NAME}. Відкритий код: github.com/OrlanDooos/svetlyachok. Графіки — з сайтів і каналів обленерго; для ДТЕК резервне джерело — outage-data-ua (MIT). Мапа областей: @svg-maps/ukraine (CC BY 4.0). Контури будинків: © учасники OpenStreetMap (ODbL). Шрифти Onest і Manrope (OFL).",
-                "Светлячок ${BuildConfig.VERSION_NAME}. Открытый код: github.com/OrlanDooos/svetlyachok. Графики — с сайтов и каналов облэнерго; для ДТЭК запасной источник — outage-data-ua (MIT). Карта областей: @svg-maps/ukraine (CC BY 4.0). Контуры домов: © участники OpenStreetMap (ODbL). Шрифты Onest и Manrope (OFL)."),
+            tr("Світлячок ${BuildConfig.VERSION_NAME}. Відкритий код: github.com/OrlanDooos/svetlyachok. Графіки — з сайтів і каналів обленерго; для ДТЕК резервне джерело — outage-data-ua (MIT). Мапа областей: @svg-maps/ukraine (CC BY 4.0). Контури будинків: © учасники OpenStreetMap (ODbL). Адреси будинків, яких немає в OpenStreetMap: © АТ «Візіком» (за запитом, не зберігаються). Шрифти Onest і Manrope (OFL).",
+                "Светлячок ${BuildConfig.VERSION_NAME}. Открытый код: github.com/OrlanDooos/svetlyachok. Графики — с сайтов и каналов облэнерго; для ДТЭК запасной источник — outage-data-ua (MIT). Карта областей: @svg-maps/ukraine (CC BY 4.0). Контуры домов: © участники OpenStreetMap (ODbL). Адреса домов, которых нет в OpenStreetMap: © АО «Визиком» (по запросу, не сохраняются). Шрифты Onest и Manrope (OFL)."),
             style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted,
         )
     }
