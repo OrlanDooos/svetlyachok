@@ -541,7 +541,7 @@ fun CityMapScreen(
                         scope.launch { zoomAnim.snapTo(0.92f); zoomAnim.animateTo(1f, spring(dampingRatio = 0.5f)) }
                     }
                 }
-                if (w.twoPane) MapLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 32.dp))
+                if (w.twoPane) MapLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 32.dp), repo.summary(city.region)?.mode)
                 Text(tr("© учасники OpenStreetMap", "© участники OpenStreetMap"), style = Type.tiny, color = c.muted,
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = if (!w.twoPane && picked != null) 8.dp else if (w.useRail) 12.dp else BottomBarSpace + 4.dp))
             }
@@ -561,7 +561,7 @@ fun CityMapScreen(
         if (!w.twoPane) {
             // imePadding: шторка поднимается над клавиатурой (окно edge-to-edge, само оно не сжимается).
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()) {
-                MapLegend(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).align(Alignment.CenterHorizontally))
+                MapLegend(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).align(Alignment.CenterHorizontally), repo.summary(city.region)?.mode)
                 AnimatedVisibility(picked != null || pending != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                     Column(
                         Modifier.fillMaxWidth().widthIn(max = 640.dp)
@@ -779,15 +779,27 @@ private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier
     }
 }
 
+/** Легенда карты домов: цвета зависят от режима области (аварийные — красный вместо жёлтого). */
 @Composable
-private fun MapLegend(modifier: Modifier = Modifier) {
+private fun MapLegend(modifier: Modifier = Modifier, mode: ua.svetlo.monitor.data.RegionMode? = null) {
     val c = Svetlo.colors
-    FlowRow(
-        modifier.shadow(6.dp, CircleShape).clip(RoundedCornerShape(18.dp)).background(c.surface).padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+    val emergency = mode == ua.svetlo.monitor.data.RegionMode.Emergency
+    val blackout = mode == ua.svetlo.monitor.data.RegionMode.Blackout
+    Column(
+        modifier.widthIn(max = 360.dp).shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(c.surface)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        LegendItem(Status.Green, tr("світло є", "свет есть")); LegendItem(Status.Yellow, tr("відключення", "отключение")); LegendItem(Status.Maybe, tr("частково", "частично"))
-        LegendItem(if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6), tr("черга невідома", "очередь неизвестна"))
+        if (emergency || blackout) {
+            Text(if (blackout) tr("Блекаут: графіки не діють", "Блэкаут: графики не действуют") else tr("Аварійні: графік може не діяти", "Аварийные: график может не действовать"),
+                style = Type.caption.copy(fontWeight = FontWeight.Bold), color = c.redInk, maxLines = 1)
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (!blackout) LegendItem(Status.Green, tr("світло є", "свет есть"))
+            LegendItem(if (emergency) Status.Red else if (blackout) Status.Black else Status.Yellow, tr("немає", "нет"))
+            if (!blackout) LegendItem(Status.Maybe, tr("частково", "частично"))
+            LegendItem(if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6), tr("невідомо", "неизвестно"))
+        }
     }
 }
 

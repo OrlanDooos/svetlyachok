@@ -286,10 +286,12 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
 
     override fun queueOffNow(region: String, queue: String, at: LocalDateTime): OutageType {
         val mode = summary(region)?.mode ?: RegionMode.Unknown
-        if (mode == RegionMode.Emergency || mode == RegionMode.Blackout) return mode.type
+        if (mode == RegionMode.Blackout) return mode.type
         val d = schedule(region, queue, at.toLocalDate())
-        if (!d.known) return OutageType.NoData
-        return if (d.slots[slotAt(at)] == Slot.Off) OutageType.Stabilization else OutageType.None
+        // Аварийные: дома без света по графику — красные, со светом по графику — зелёные (график может не действовать).
+        if (!d.known) return if (mode == RegionMode.Emergency) OutageType.Emergency else OutageType.NoData
+        val off = d.slots[slotAt(at)] == Slot.Off
+        return if (off) (if (mode == RegionMode.Emergency) OutageType.Emergency else OutageType.Stabilization) else OutageType.None
     }
 
     override fun powerWindows(region: String, queue: String, date: LocalDate): List<PowerWindow> {
