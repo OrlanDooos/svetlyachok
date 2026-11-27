@@ -13,3 +13,10 @@ CREATE TABLE IF NOT EXISTS pins (
 CREATE INDEX IF NOT EXISTS pins_region ON pins(region, address);
 CREATE INDEX IF NOT EXISTS pins_install_day ON pins(install, created);
 CREATE INDEX IF NOT EXISTS pins_ip_day ON pins(ip_hash, created);
+
+-- Свежие графики от сборщика (GitHub Actions): приложение читает их отсюда без задержки CDN.
+CREATE TABLE IF NOT EXISTS files (
+  path    TEXT PRIMARY KEY,
+  body    TEXT NOT NULL,
+  updated INTEGER NOT NULL
+);

@@ -56,22 +56,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 delay(15_000)
             }
         }
-        // Пока приложение открыто, обновляем графики раз в 5 минут.
+        // Пока приложение открыто, проверяем графики каждую минуту (сборщик тоже работает раз в минуту).
         viewModelScope.launch {
             while (true) {
                 refresh()
-                delay(5 * 60_000)
+                delay(60_000)
             }
         }
     }
 
     private var lastRefresh = 0L
 
-    /** Проверка новых графиков. Не чаще раза в минуту: сервер всё равно обновляется раз в 10 минут. */
+    /** Проверка новых графиков. Не чаще раза в 30 секунд. */
     fun refresh() {
         if (_refreshing.value) return
         val t = System.currentTimeMillis()
-        if (t - lastRefresh < 60_000) return
+        if (t - lastRefresh < 30_000) return
         lastRefresh = t
         viewModelScope.launch {
             _refreshing.value = true

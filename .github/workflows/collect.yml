@@ -1,5 +1,5 @@
 name: Collect schedules
-# Каждые 10 минут собираем графики и публикуем их в ветку data (одним коммитом, без истории).
+# Каждую минуту собираем графики, кладём на сервер Cloudflare (быстро) и в ветку data (одним коммитом, без истории).
 # Один запуск крутится ~5 ч 40 мин (collector/loop.sh) и в конце перезапускает себя.
 # cron остаётся запасным вариантом, если цепочка оборвётся.
 # Приложение читает https://raw.githubusercontent.com/OrlanDooos/svetlyachok/data/v1/regions.json
@@ -13,6 +13,8 @@ on:
 permissions:
   contents: write
   actions: write
+  id-token: write   # вход на сервер Cloudflare (collector/upload.py) без секретов
+  issues: write     # сторож (collector/watchdog.py) открывает issue, если графика нет
 concurrency:
   group: collect
   cancel-in-progress: false
@@ -29,7 +31,7 @@ jobs:
           if git rev-parse --verify -q origin/data >/dev/null; then git --work-tree=collector/out checkout origin/data -- . ; git reset -q; fi
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Collect every 10 minutes
+      - name: Collect every minute
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: collector/loop.sh

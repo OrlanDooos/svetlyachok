@@ -15,8 +15,10 @@ import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 
-/** Откуда берём графики: ветка data репозитория, её каждые 10 минут обновляет сборщик (collector/). */
+/** Откуда берём графики: сборщик (collector/) каждую минуту кладёт их на наш сервер Cloudflare и в ветку data. */
 object DataSource {
+    /** Сервер Cloudflare: свежие графики через ~20 секунд после сбора (кеш GitHub — до 10 минут). */
+    const val Fast = "https://svetlyachok-pins.svetlyachok.workers.dev/data/v1/"
     /** GitHub Pages из ветки data (CDN, рассчитан на раздачу), запасной вариант — raw.githubusercontent. */
     val Bases = listOf(
         "https://orlandooos.github.io/svetlyachok/v1/",
@@ -167,7 +169,7 @@ class ScheduleStore(private val dir: File) {
 
     private fun download(name: String): String {
         var last: Exception? = null
-        for (base in DataSource.Bases) {
+        for (base in listOf(DataSource.Fast) + DataSource.Bases) {
             val c = URL(base + name + "?t=" + System.currentTimeMillis() / 60000).openConnection() as HttpURLConnection
             c.connectTimeout = 15000; c.readTimeout = 20000
             c.setRequestProperty("User-Agent", "Svetlyachok-Android")

@@ -13,3 +13,22 @@ assert.strictEqual(validate({ region: "zaporizhia", address: "вул. Дальн
 assert.notStrictEqual(validate({ region: "kyiv", address: "вул. Дальня, 14", lon: 35.2, lat: 47.8, install: A }), null);
 assert.notStrictEqual(validate({ region: "zaporizhia", address: "Дальня", lon: 35.2, lat: 47.8, install: A }), null);
 console.log("ok");
+
+// OIDC-токен GitHub Actions: подпись своим ключом вместо ключей GitHub.
+import { verifyGithubOidc } from "./src/index.js";
+const kp = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+const pub = { ...(await crypto.subtle.exportKey("jwk", kp.publicKey)), kid: "k1" };
+const enc = o => Buffer.from(JSON.stringify(o)).toString("base64url");
+async function jwt(claims) {
+  const h = enc({ alg: "RS256", kid: "k1" }), b = enc(claims);
+  const sig = Buffer.from(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", kp.privateKey, new TextEncoder().encode(h + "." + b))).toString("base64url");
+  return `${h}.${b}.${sig}`;
+}
+const keys = async () => ({ keys: [pub] });
+const good = { iss: "https://token.actions.githubusercontent.com", aud: "svetlyachok-data", repository: "OrlanDooos/svetlyachok", exp: 2e9 };
+assert.strictEqual(await verifyGithubOidc(await jwt(good), 1.9e9, keys), true);
+assert.strictEqual(await verifyGithubOidc(await jwt({ ...good, repository: "evil/repo" }), 1.9e9, keys), false);
+assert.strictEqual(await verifyGithubOidc(await jwt({ ...good, aud: "x" }), 1.9e9, keys), false);
+assert.strictEqual(await verifyGithubOidc(await jwt({ ...good, exp: 1 }), 1.9e9, keys), false);
+const t = await jwt(good); assert.strictEqual(await verifyGithubOidc(t.slice(0, -4) + "AAAA", 1.9e9, keys), false);
+console.log("oidc ok");

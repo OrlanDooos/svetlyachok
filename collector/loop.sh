@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Собирает графики каждые 10 минут в течение LOOP_SECONDS и публикует их в ветку data.
+# Собирает графики каждую минуту в течение LOOP_SECONDS: сразу кладёт их на сервер Cloudflare
+# (приложение видит их через ~20 с), а в ветку data публикует при изменении или раз в 10 минут.
 # Расписание GitHub (cron) часто срабатывает с опозданием на часы, поэтому один запуск
 # работает почти 6 часов, а в конце запускает себя снова.
 set -u
@@ -21,10 +22,16 @@ publish() {
 while :; do
   started=$(date +%s)
   # Берём свежий код сборщика из main: исправления начинают работать сразу, не дожидаясь нового запуска.
-  git fetch -q --depth 1 origin main 2>/dev/null && git checkout -q FETCH_HEAD -- collector/collect.py collector/addresses.py 2>/dev/null && git reset -q
+  git fetch -q --depth 1 origin main 2>/dev/null && git checkout -q FETCH_HEAD -- collector/collect.py collector/addresses.py collector/upload.py collector/watchdog.py 2>/dev/null && git reset -q
+  before=$(cat collector/out/v1/*.json 2>/dev/null | grep -o '"hash":"[0-9a-f]*"' | sort | md5sum)
   python3 collector/collect.py || echo "сборщик завершился с ошибкой"
-  publish || echo "не удалось опубликовать"
-  next=$(( started + ${INTERVAL:-600} ))
+  python3 collector/upload.py collector/out || echo "не удалось загрузить на сервер"
+  after=$(cat collector/out/v1/*.json 2>/dev/null | grep -o '"hash":"[0-9a-f]*"' | sort | md5sum)
+  if [ "$before" != "$after" ] || [ $(( started - ${last_pub:-0} )) -ge 600 ]; then
+    publish && last_pub=$started || echo "не удалось опубликовать"
+  fi
+  python3 collector/watchdog.py collector/out || echo "сторож завершился с ошибкой"
+  next=$(( started + ${INTERVAL:-60} ))
   [ "$next" -ge "$end" ] && break
   sleep $(( next - $(date +%s) > 0 ? next - $(date +%s) : 0 ))
 done
