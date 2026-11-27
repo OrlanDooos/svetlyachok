@@ -14,8 +14,8 @@ android {
         applicationId = "ua.svetlo.monitor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.1"
+        versionCode = 13
+        versionName = "1.2"
     }
 
     // Ключ подписи хранится вне репозитория. Путь к keystore.properties: свойство svetlo.keystore

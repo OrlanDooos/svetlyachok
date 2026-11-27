@@ -173,7 +173,7 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
                 val idx = dates.indices.firstOrNull { beforeSlots[a.id]?.getOrNull(it) != afterSlots[a.id]?.getOrNull(it) } ?: 0
                 val day = if (idx == 0) tr("сьогодні", "сегодня") else tr("завтра", "завтра")
                 val w = Reminders.offWindows(repo, a.region, a.queue, now).filter { it.first.toLocalDate() == dates[idx] || idx == 0 }.take(4)
-                Notifications.show(applicationContext, 100 + i, Notifications.CHANGES, tr("Графік на $day змінився", "График на $day изменился"),
+                Notifications.show(applicationContext, 100 + i, Notifications.CHANGES, if (beforeSlots[a.id]?.getOrNull(idx) == null) tr("Опубліковано графік на $day", "Опубликован график на $day") else tr("Графік на $day змінився", "График на $day изменился"),
                     "${a.labelName} · ${tr("черга", "очередь")} ${a.queue}: " + (if (w.isEmpty()) tr("відключень немає", "отключений нет") else w.joinToString(", ") { "${it.first.hm()}–${it.second.hm()}" }),
                     silent = quiet(s, now))
             }

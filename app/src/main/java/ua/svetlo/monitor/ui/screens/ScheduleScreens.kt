@@ -111,7 +111,7 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRe
     val w = LocalWindow.current
     val region = s.selected.region
     val ver by repo.version.collectAsState()
-    val days = remember(ver, queue, region, now.toLocalDate()) { (0 until 7).map { repo.schedule(region, queue, now.toLocalDate().plusDays(it.toLong())) } }
+    val days = remember(ver, queue, region, now.toLocalDate()) { (0..1).map { repo.schedule(region, queue, now.toLocalDate().plusDays(it.toLong())) } }
     val mode = remember(ver, region) { repo.summary(region)?.mode }
     val queueList = remember(ver, region) { repo.queues(region) }
     val today = days.first()
@@ -120,14 +120,14 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRe
     val weekCard: @Composable () -> Unit = {
         Rise {
             SCard(Modifier.fillMaxWidth()) {
-                SectionHeader(tr("Тиждень", "Неделя"), tr("00 — 24 год", "00 — 24 ч"))
+                SectionHeader(tr("Сьогодні і завтра", "Сегодня и завтра"), tr("00 — 24 год", "00 — 24 ч"))
                 days.forEachIndexed { i, d ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (i == 0) tr("Сьогодні", "Сегодня") else "${d.date.dayOfWeek.ruShort()} ${d.date.dayOfMonth}",
+                        Text(if (i == 0) tr("Сьогодні", "Сегодня") else tr("Завтра", "Завтра"),
                             style = Type.caption.copy(fontWeight = if (i == 0) FontWeight.ExtraBold else FontWeight.SemiBold),
                             color = if (i == 0) c.ink else c.muted, modifier = Modifier.width(60.dp))
                         if (!d.known) Box(Modifier.weight(1f).height(if (w.widthClass == ua.svetlo.monitor.ui.WidthClass.Compact) 20.dp else 26.dp).clip(RoundedCornerShape(3.dp)).background(c.divider), contentAlignment = Alignment.Center) {
-                            Text(tr("графіка ще немає", "графика ещё нет"), style = Type.caption, color = c.muted)
+                            Text(if (i == 0) tr("графіка ще немає", "графика ещё нет") else tr("з'явиться ввечері", "появится вечером"), style = Type.caption, color = c.muted)
                         } else Box(Modifier.weight(1f).graphicsLayer { alpha = if (d.forecast) 0.75f else 1f }) {
                             DayBar(d.slots, height = if (w.widthClass == ua.svetlo.monitor.ui.WidthClass.Compact) 20.dp else 26.dp, forecast = d.forecast, gap = 1.dp, radius = 3.dp,
                                 nowFraction = if (i == 0) (now.hour * 60 + now.minute) / 1440f else null)
@@ -135,9 +135,9 @@ fun ScheduleScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onRe
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    LegendItem(Status.Green, tr("Світло є", "Свет есть")); LegendItem(Status.Yellow, tr("Відключення", "Отключение")); LegendItem(Status.Maybe, tr("Можливо", "Возможно")); LegendItem(Status.Forecast, tr("Прогноз", "Прогноз"))
+                    LegendItem(Status.Green, tr("Світло є", "Свет есть")); LegendItem(Status.Yellow, tr("Відключення", "Отключение")); LegendItem(Status.Maybe, tr("Можливо", "Возможно"))
                 }
-                Text(tr("Прогноз — за тижневим графіком оператора, якщо він його публікує. Точний графік обленерго зазвичай викладає напередодні ввечері.", "Прогноз — по недельному графику оператора, если он его публикует. Точный график облэнерго обычно выкладывает накануне вечером."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
+                Text(tr("Графік на завтра обленерго зазвичай публікує ввечері, ближче до 23:00. Ми перевіряємо кожні 10 хвилин і повідомимо, щойно він з'явиться.", "График на завтра облэнерго обычно публикует вечером, ближе к 23:00. Мы проверяем каждые 10 минут и сообщим, как только он появится."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
             }
         }
     }

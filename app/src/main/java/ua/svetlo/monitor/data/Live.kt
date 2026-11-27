@@ -205,10 +205,7 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
     override fun schedule(region: String, queue: String, date: LocalDate): DaySchedule {
         val r = store.region(region)
         r?.days?.get(date)?.get(queue)?.let { return DaySchedule(date, it.toSlots(), forecast = false, known = true) }
-        // Прогноз по недельному шаблону оператора: отключения в нём — «возможно».
-        r?.week?.get(queue)?.getOrNull(date.dayOfWeek.value - 1)?.takeIf { date.isAfter(LocalDate.now(DataSource.Kyiv)) && it.any { c -> c != '1' } }?.let { w ->
-            return DaySchedule(date, w.toSlots().map { if (it == Slot.Off) Slot.Maybe else it }, forecast = true, known = true)
-        }
+        // Недельный шаблон оператора не показываем: настоящий график на завтра появляется только вечером.
         return DaySchedule(date, List(48) { Slot.On }, forecast = date.isAfter(LocalDate.now(DataSource.Kyiv)), known = false)
     }
 

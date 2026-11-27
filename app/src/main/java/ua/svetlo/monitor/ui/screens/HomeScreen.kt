@@ -119,7 +119,7 @@ fun HomeScreen(
     val status: @Composable () -> Unit = { StatusCard(state, now, supported, s.selected.queue) }
     val todayCard: @Composable () -> Unit = {
         SCard {
-            SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Увесь тиждень", "Вся неделя"), onSchedule)
+            SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Завтра", "Завтра"), onSchedule)
             val frac = (now.hour * 60 + now.minute) / 1440f
             if (state.schedulesSuspended) {
                 Text(tr("Поки діють аварійні відключення, графік черги не застосовується.", "Пока действуют аварийные отключения, график очереди не применяется."), style = Type.small, color = Svetlo.colors.ink2)
