@@ -606,6 +606,11 @@ REGIONS = [
 ]
 
 
+# Как часто (в секундах) обновлять области, где источник — только объявления в каналах.
+SLOW = {rid: 290 for rid in ("ivano-frankivsk", "ternopil", "sumy", "chernihiv", "chernivtsi", "volyn",
+                             "zakarpattia", "vinnytsia", "poltava", "kherson", "donetsk")}
+
+
 def summarize(days, today):
     """Среднее время без света за сегодня по всем очередям, в минутах."""
     d = days.get(today.isoformat())
@@ -624,9 +629,19 @@ def main():
     if os.path.exists(idx_path):
         prev = {r["id"]: r for r in json.load(open(idx_path))["regions"]}
     index = []
+    only = set(filter(None, os.environ.get("ONLY", "").split(",")))
     for rid, name, operator, fn in REGIONS:
-        log(f"→ {rid}")
+        if only and rid not in only:
+            continue
         path = os.path.join(OUT, "v1", f"{rid}.json")
+        # Каналы Telegram не дёргаем каждую минуту: области «только режим» обновляем раз в 5 минут.
+        every = SLOW.get(rid)
+        if every and rid in prev and prev[rid].get("ok") and prev[rid].get("checkedAt") and os.path.exists(path):
+            age = (now - dt.datetime.fromisoformat(prev[rid]["checkedAt"])).total_seconds()
+            if age < every:
+                index.append(prev[rid])
+                continue
+        log(f"→ {rid}")
         try:
             r = fn()
             old = json.load(open(path)) if os.path.exists(path) else {}
