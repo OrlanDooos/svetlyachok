@@ -74,7 +74,8 @@ def build(cid, rel, bbox, n, out_dir):
     pins_url = os.environ.get("PINS_URL", "").rstrip("/")
     if pins_url:
         try:
-            with urllib.request.urlopen(f"{pins_url}/confirmed?region={region}", timeout=60) as r:
+            req = urllib.request.Request(f"{pins_url}/confirmed?region={region}", headers={"User-Agent": "svetlyachok-maps"})  # Python-urllib Cloudflare режет (1010)
+            with urllib.request.urlopen(req, timeout=60) as r:
                 open(os.path.join(tiles, "pins.json"), "wb").write(r.read())
         except Exception as ex:
             print(f"  нет отметок жителей: {ex}", flush=True)
