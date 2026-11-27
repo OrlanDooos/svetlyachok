@@ -139,7 +139,11 @@ class ScheduleStore(private val dir: File) {
     suspend fun refreshMap(id: String): Boolean = withContext(Dispatchers.IO) {
         val mapDir = File(dir, "maps").apply { mkdirs() }
         val mark = File(mapDir, "$id.hash")
-        if (mark.exists() && System.currentTimeMillis() - mark.lastModified() < 24 * 3600_000L) return@withContext false
+        // Проверяем не чаще раза в 3 часа (карты пересобираются раз в сутки), но после обновления приложения — сразу.
+        val ver = File(mapDir, "$id.ver")
+        val sameApp = ver.exists() && ver.readText() == ua.svetlo.monitor.BuildConfig.VERSION_CODE.toString()
+        if (sameApp && mark.exists() && System.currentTimeMillis() - mark.lastModified() < 3 * 3600_000L) return@withContext false
+        runCatching { ver.writeText(ua.svetlo.monitor.BuildConfig.VERSION_CODE.toString()) }
         // Сначала наш сервер (карта с адресами из своей базы), потом git (только OSM). Если уже стоит карта
         // с сервера, на карту из git не откатываемся: сервер мог просто не ответить.
         val sources = listOf("s:" to DataSource.Maps) + DataSource.Bases.map { "g:" to it + "maps/" }
