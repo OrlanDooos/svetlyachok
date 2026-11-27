@@ -32,3 +32,17 @@ assert.strictEqual(await verifyGithubOidc(await jwt({ ...good, aud: "x" }), 1.9e
 assert.strictEqual(await verifyGithubOidc(await jwt({ ...good, exp: 1 }), 1.9e9, keys), false);
 const t = await jwt(good); assert.strictEqual(await verifyGithubOidc(t.slice(0, -4) + "AAAA", 1.9e9, keys), false);
 console.log("oidc ok");
+
+// Telegram-бот: отзывы и тревоги сторожа.
+import { validateFeedback, feedbackMessage, diffIssues, esc } from "./src/telegram.js";
+assert.strictEqual(validateFeedback({ text: "Не бачу свою чергу", install: A }), null);
+assert.notStrictEqual(validateFeedback({ text: "ok", install: A }), null);
+assert.notStrictEqual(validateFeedback({ text: "x".repeat(2001), install: A }), null);
+assert.notStrictEqual(validateFeedback({ text: "нормальний текст", install: "nope" }), null);
+assert.ok(feedbackMessage({ text: "<script>", contact: "@me", app: "1.5" }).includes("&lt;script&gt;"));
+assert.strictEqual(esc("a&b"), "a&amp;b");
+let d = diffIssues({}, [{ number: 7, title: "⚠️ Київ: нет графика" }]);
+assert.strictEqual(d.opened.length, 1);
+d = diffIssues(d.next, []);
+assert.deepStrictEqual(d.closed, [{ number: 7, title: "⚠️ Київ: нет графика" }]);
+console.log("bot ok");

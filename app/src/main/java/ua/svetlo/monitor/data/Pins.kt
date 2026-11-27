@@ -18,7 +18,10 @@ import java.util.UUID
 object Pins {
     val enabled: Boolean get() = BuildConfig.PINS_URL.isNotBlank()
 
-    private fun installId(ctx: Context): String {
+    /** Адрес метода сервера: PINS_URL — корень Worker. */
+    fun endpoint(path: String): String = BuildConfig.PINS_URL.trimEnd('/') + "/" + path
+
+    fun installId(ctx: Context): String {
         val p = ctx.getSharedPreferences("pins", Context.MODE_PRIVATE)
         return p.getString("id", null) ?: UUID.randomUUID().toString().also { p.edit().putString("id", it).apply() }
     }
@@ -33,7 +36,7 @@ object Pins {
         if (!enabled) return false
         return withContext(Dispatchers.IO) {
             runCatching {
-                val c = URL(BuildConfig.PINS_URL).openConnection() as HttpURLConnection
+                val c = URL(endpoint("pin")).openConnection() as HttpURLConnection
                 c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 8000; c.readTimeout = 8000
                 c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 c.setRequestProperty("User-Agent", "Svetlyachok-Android")

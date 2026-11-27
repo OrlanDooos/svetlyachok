@@ -10,3 +10,11 @@ compatibility_date = "2026-11-01"
 binding = "DB"
 database_name = "svetlyachok-pins"
 database_id = "cd6ca06d-5fac-477e-8155-71ae29500cbd"
+
+# Личный Telegram-бот (telegram.js): проверка тревог сторожа и свежести данных.
+# Секреты задаются отдельно и в репозиторий не попадают: TG_BOT_TOKEN, TG_CLAIM, ADMIN_KEY.
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+PUBLIC_URL = "https://svetlyachok-pins.svetlyachok.workers.dev"

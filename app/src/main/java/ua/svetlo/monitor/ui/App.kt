@@ -79,6 +79,7 @@ import ua.svetlo.monitor.ui.screens.HomeScreen
 import ua.svetlo.monitor.ui.screens.MapUkraineScreen
 import ua.svetlo.monitor.ui.screens.MoreScreen
 import ua.svetlo.monitor.ui.screens.NotifScreen
+import ua.svetlo.monitor.ui.screens.FeedbackScreen
 import ua.svetlo.monitor.ui.screens.OnboardingScreen
 import ua.svetlo.monitor.ui.screens.ScheduleScreen
 import ua.svetlo.monitor.ui.screens.WidgetsScreen
@@ -101,6 +102,7 @@ object Routes {
     const val Sources = "sources"
     const val Windows = "windows"
     const val Widgets = "widgets"
+    const val Feedback = "feedback"
 }
 
 private data class Tab(val route: String, val title: String, val icon: ImageVector, val matches: Set<String>)
@@ -295,6 +297,7 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
         composable(Routes.Addresses) { AddressesScreen(repo, s, now, onBack = { nav.popBackStack() }, update = update) }
         composable(Routes.Notif) { NotifScreen(s, onBack = { nav.popBackStack() }, update = update) }
         composable(Routes.Sources) { SourcesScreen(repo, onBack = { nav.popBackStack() }) }
+        composable(Routes.Feedback) { FeedbackScreen(s, onBack = { nav.popBackStack() }) }
         composable(Routes.Windows) { WindowsScreen(repo, s, now, onBack = { nav.popBackStack() }) }
         composable(Routes.Widgets) { WidgetsScreen(repo, s, now, onBack = { nav.popBackStack() }) }
     }

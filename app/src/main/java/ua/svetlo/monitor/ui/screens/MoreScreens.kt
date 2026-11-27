@@ -101,6 +101,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Feedback
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import ua.svetlo.monitor.data.LiveRepository
 import ua.svetlo.monitor.data.RegionMode
 import ua.svetlo.monitor.data.DataSource
@@ -141,6 +144,7 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
                 Triple(tr("Вікна світла", "Окна света"), tr("сьогодні", "сегодня"), Routes.Windows) to (Bolt to (Status.Yellow to c.yellowSoft)),
                 Triple(tr("Області і джерела даних", "Области и источники данных"), "", Routes.Sources) to (Icons.Rounded.Public to (c.accent to c.accentSoft)),
                 Triple(tr("Віджет", "Виджет"), "", Routes.Widgets) to (Icons.Rounded.Widgets to (Status.Blue to Color(0x223B82F6))),
+                Triple(tr("Написати відгук", "Написать отзыв"), "", Routes.Feedback) to (Icons.Rounded.Feedback to (Status.Orange to Color(0x22F97316))),
             )
             rows.forEachIndexed { i, (r, ic) ->
                 NavRow(r.first, r.second.ifEmpty { null }, divider = i < rows.lastIndex, leading = { IconTile(ic.first, ic.second.first, ic.second.second, 32.dp) }) { nav(r.third) }
@@ -407,5 +411,51 @@ fun WidgetsScreen(repo: OutageRepository, s: Settings, now: LocalDateTime, onBac
             Text(st.nextChange?.let { (if (st.lightOn == true) tr("Вимкнуть о ", "Выключат в ") else tr("Увімкнуть о ", "Включат в ")) + it.hm() + " · " + formatDuration(between(now, it)) } ?: "", style = Type.small, color = c.muted)
             DayBar(today.slots, height = 22.dp, nowFraction = (now.hour * 60 + now.minute) / 1440f)
         }
+    }
+}
+
+/** «Написати відгук»: текст уходит автору приложения (в его Telegram через наш сервер). */
+@Composable
+fun FeedbackScreen(s: Settings, onBack: () -> Unit) {
+    val c = Svetlo.colors
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf("") }
+    var contact by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<ua.svetlo.monitor.data.Feedback.Result?>(null) }
+    ScreenColumn {
+        BackHeader(tr("Написати відгук", "Написать отзыв"), tr("Автор прочитає кожен", "Автор прочитает каждый"), onBack)
+        if (result == ua.svetlo.monitor.data.Feedback.Result.Ok) {
+            SCard(Modifier.fillMaxWidth(), color = c.greenSoft) {
+                Text(tr("Дякуємо! Відгук надіслано.", "Спасибо! Отзыв отправлен."), style = Type.bodyBold, color = c.greenInk)
+                Text(tr("Якщо ви залишили контакт, вам можуть відповісти.", "Если вы оставили контакт, вам могут ответить."), style = Type.small, color = c.greenInk)
+            }
+            PrimaryButton(tr("Готово", "Готово"), onBack, Modifier.fillMaxWidth())
+            return@ScreenColumn
+        }
+        Text(tr("Помилка в графіку, не та черга, ідея чи побажання — напишіть, що завгодно.",
+            "Ошибка в графике, не та очередь, идея или пожелание — пишите что угодно."), style = Type.small, color = c.ink2)
+        Box(Modifier.fillMaxWidth().heightIn(min = 150.dp).clip(RoundedCornerShape(14.dp)).background(c.surface2).padding(14.dp)) {
+            if (text.isEmpty()) Text(tr("Ваш відгук", "Ваш отзыв"), style = Type.body, color = c.muted)
+            BasicTextField(text, { text = it.take(ua.svetlo.monitor.data.Feedback.MAX) }, textStyle = Type.body.copy(color = c.ink), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 122.dp))
+        }
+        InputField(contact, { contact = it.take(100) }, tr("Telegram або email для відповіді (необов'язково)", "Telegram или email для ответа (необязательно)"))
+        when (result) {
+            ua.svetlo.monitor.data.Feedback.Result.TooMany -> Text(tr("Забагато відгуків за добу. Спробуйте завтра.", "Слишком много отзывов за сутки. Попробуйте завтра."), style = Type.small, color = c.redInk)
+            ua.svetlo.monitor.data.Feedback.Result.Failed -> Text(tr("Не вдалося надіслати. Перевірте інтернет і спробуйте ще раз.", "Не удалось отправить. Проверьте интернет и попробуйте ещё раз."), style = Type.small, color = c.redInk)
+            else -> {}
+        }
+        val ready = text.trim().length >= 3 && !sending
+        PrimaryButton(if (sending) tr("Надсилаємо…", "Отправляем…") else tr("Надіслати", "Отправить"), {
+            if (!ready) return@PrimaryButton
+            sending = true
+            scope.launch {
+                result = ua.svetlo.monitor.data.Feedback.send(ctx, text, contact, s.selected.region)
+                sending = false
+            }
+        }, Modifier.fillMaxWidth(), bg = if (ready) c.accent else c.surface2, fg = if (ready) c.onAccent else c.muted)
+        Text(tr("Разом з текстом надсилаємо версію застосунку, область вибраної адреси і модель телефона. Більше нічого.",
+            "Вместе с текстом отправляем версию приложения, область выбранного адреса и модель телефона. Больше ничего."), style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted)
     }
 }
