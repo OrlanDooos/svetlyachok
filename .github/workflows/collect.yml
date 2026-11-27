@@ -31,6 +31,11 @@ jobs:
           if git rev-parse --verify -q origin/data >/dev/null; then git --work-tree=collector/out checkout origin/data -- . ; git reset -q; fi
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - name: OCR for schedule images (Прикарпаття, Чернігів, Суми)
+        continue-on-error: true
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
+          pip install -q pillow
       - name: Collect every minute
         env:
           GITHUB_TOKEN: ${{ github.token }}

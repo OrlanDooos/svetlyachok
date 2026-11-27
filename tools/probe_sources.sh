@@ -41,5 +41,6 @@ LIST
 
 # Пробный сбор новых областей с этой машины (GitHub Actions) — без публикации.
 echo; echo "=== пробный сбор"
-OUT_DIR=$(mktemp -d) ONLY=zhytomyr,mykolaiv,kirovohrad,rivne,khmelnytskyi,cherkasy,kharkiv,ivano-frankivsk,ternopil,sumy,chernihiv,chernivtsi,volyn,zakarpattia,vinnytsia,poltava,kherson,donetsk \
-  python3 -c "import sys; sys.path.insert(0, 'collector'); import addresses; addresses.update = lambda *a, **k: None; import collect; collect.main()"
+export OUT_DIR=$(mktemp -d); ONLY=zaporizhia,ivano-frankivsk,ternopil,sumy,chernihiv,chernivtsi,volyn,zakarpattia,vinnytsia,poltava,kherson,donetsk \
+  python3 -c "import sys; sys.path.insert(0, 'collector'); import addresses; addresses.update = lambda *a, **k: None; import collect; collect.main()" &&
+  python3 -c "import json,glob; [print(f.split('/')[-1], {d: v.get('1.1') or v.get('1') for d, v in json.load(open(f))['days'].items()}) for f in sorted(glob.glob('$OUT_DIR/v1/*.json')) if 'regions' not in f]"

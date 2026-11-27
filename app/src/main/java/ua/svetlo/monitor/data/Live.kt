@@ -57,6 +57,7 @@ data class RegionData(
     val hash: String?, val changedAt: OffsetDateTime?, val checkedAt: OffsetDateTime?,
     /** false — источник даёт только режим области, без графика по очередям. */
     val queueSchedules: Boolean = true,
+    val sourceNote: String? = null,
 )
 
 /** Кэш на диске + загрузка из сети. Всё, что видит интерфейс, читается из кэша. */
@@ -230,6 +231,7 @@ class ScheduleStore(private val dir: File) {
                 o.optString("attention").takeIf { it.isNotEmpty() && it != "null" }, o.optString("updatedAtSource").takeIf { it.isNotEmpty() && it != "null" },
                 days, week, o.optString("hash").ifEmpty { null }, time(o, "changedAt"), time(o, "checkedAt"),
                 queueSchedules = o.optBoolean("queueSchedules", true),
+                sourceNote = o.optString("sourceNote").takeIf { it.isNotEmpty() && it != "null" },
             )
         }
     }
@@ -259,7 +261,10 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
     private fun slotAt(t: LocalDateTime) = t.hour * 2 + t.minute / 30
     private fun slotStart(date: LocalDate, slot: Int): LocalDateTime = date.atStartOfDay().plusMinutes(slot * 30L)
 
-    override fun now(region: String, queue: String, at: LocalDateTime): NowState {
+    override fun now(region: String, queue: String, at: LocalDateTime): NowState =
+        nowRaw(region, queue, at).let { st -> store.region(region)?.sourceNote?.let { st.copy(sourceNote = it) } ?: st }
+
+    private fun nowRaw(region: String, queue: String, at: LocalDateTime): NowState {
         val sum = summary(region)
         val data = store.region(region)
         val mode = data?.mode ?: sum?.mode ?: RegionMode.Unknown
