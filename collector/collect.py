@@ -316,6 +316,263 @@ def with_channel_attention(fn, channels, own):
     return run
 
 
+# ------------------------------------------------------------------ Остальные области (сайты и каналы облэнерго)
+
+QMARK = re.compile(r"(?<![\d.,:/])([1-6])\s?[.,/]\s?([12])(?!\d)")
+QRANGE = re.compile(r"(?<![\d.])(\d{1,2})(?::(\d{2}))?\s*(?:-|–|—|до)\s*(\d{1,2})(?::(\d{2}))?(?![\d.])")
+DATE_ANY = re.compile(r"(\d{1,2})\s+(" + "|".join(MONTHS) + r")|(\d{2})[.\-](\d{2})[.\-](\d{4})", re.I)
+
+
+def ranges_to_day(seg):
+    """«08:00 - 11:00, 20:00-24:00», «04-06, 00-01:30» → 48 слотов; None, если времени нет."""
+    day, found = empty_day(), False
+    for a, am, b, bm in QRANGE.findall(seg):
+        if not am and not bm and (len(a) != 2 or len(b) != 2):
+            continue  # «2-3 години» и т. п. — не время
+        s, e = int(a) * 60 + int(am or 0), int(b) * 60 + int(bm or 0)
+        if e in (0, 1439):
+            e = 1440
+        if s >= 1440 or e > 1440 or e <= s or (am and int(am) > 59) or (bm and int(bm) > 59):
+            continue
+        found = True
+        mark(day, s, e)
+    return "".join(day) if found else None
+
+
+def parse_queue_ranges(text):
+    """Очереди с часами отключений в любом из форматов облэнерго:
+    «Черга 1.1: 04-06, 12-14», «▪️ Підчерга 1.1 — 11:00 - 14:00», «1.1 10:00-13:30; 17:00-24:00», «2/1»."""
+    marks = list(QMARK.finditer(text))
+    res = {}
+    for i, m in enumerate(marks):
+        seg = text[m.end(): marks[i + 1].start() if i + 1 < len(marks) else len(text)]
+        seg = re.split(r"\n\s*\n|[⚠❗‼➡]|Увага|УВАГА|Оновлено|Для промисл|ДЛЯ ПРОМИСЛ", seg)[0][:300]
+        q = f"{m.group(1)}.{m.group(2)}"
+        day = ranges_to_day(seg)
+        if day is None and re.match(r"[\s:–—.-]*(не планується|не застосовується|відключень немає|без відключень|світло є)", seg, re.I):
+            day = "".join(empty_day())
+        if day is not None:
+            res[q] = day
+    return res
+
+
+def _date_of(m, year):
+    if m.group(1):
+        return dt.date(year, MONTHS[m.group(2).lower()], int(m.group(1)))
+    return dt.date(int(m.group(5)), int(m.group(4)), int(m.group(3)))
+
+
+def post_schedules(text, when):
+    """{дата: {очередь: 48 символов}} из одного поста. В посте может быть несколько дат
+    (Рівнеобленерго: «📅 26.11 … 📅 27.11 …») — каждая очередь относится к ближайшей дате перед ней."""
+    local = when.astimezone(KYIV)
+    dates = []
+    for m in DATE_ANY.finditer(text):
+        try:
+            dates.append((m.start(), _date_of(m, local.year)))
+        except ValueError:
+            pass
+    if not dates:
+        dates = [(0, local.date() + dt.timedelta(days=1 if re.search(r"\bзавтра\b", text, re.I) else 0))]
+    out = {}
+    for i, (pos, date) in enumerate(dates):
+        end = dates[i + 1][0] if i + 1 < len(dates) else len(text)
+        chunk = parse_queue_ranges(text[pos:end])
+        if chunk:
+            out.setdefault(date.isoformat(), {}).update(chunk)
+    return out
+
+
+GPV_POST = re.compile(r"ГПВ|графік\w*\s+(погодинн|відключень|заживлення)", re.I)
+ADDITIVE = re.compile(r"додатков\w*\s+(години|відключ)", re.I)
+
+
+def channel_schedule(channels, own, source, min_queues=10):
+    """Графики из текстовых постов официальных каналов облэнерго.
+
+    Полный пост (≥ min_queues очередей) на дату задаёт график. Более поздний пост на ту же дату
+    («Оновлення графіка…») меняет график только с момента публикации: прошедшие часы остаются
+    как были, а очереди, которых нет в обновлении, дальше считаются со светом.
+    Пост «додаткові години відсутності» добавляет отключения к уже известным.
+    """
+    posts = sorted((p for ch in channels for p in telegram_posts(ch, hours=40)), key=lambda p: p[0])
+    days = {}
+    for when, text in posts:
+        if not GPV_POST.search(text):
+            continue
+        local = when.astimezone(KYIV)
+        for date, qs in post_schedules(text, when).items():
+            cur = days.get(date)
+            if ADDITIVE.search(text) and cur:
+                for q, s in qs.items():
+                    base = cur.get(q, "1" * 48)
+                    cur[q] = "".join("0" if s[i] == "0" else base[i] for i in range(48))
+                continue
+            if len(qs) < 4 or (cur is None and len(qs) < min_queues):
+                continue
+            start = 0
+            if date == local.date().isoformat() and cur:
+                start = max(0, min(48, (local.hour * 60 + local.minute) // 30))
+            if start == 0 or not cur:
+                days[date] = dict(qs) if len(qs) >= min_queues or not cur else {**{q: "1" * 48 for q in cur}, **qs}
+                continue
+            for q in set(cur) | set(qs):
+                old = cur.get(q, "1" * 48)
+                new = qs.get(q, "1" * 48)
+                cur[q] = old[:start] + new[start:]
+    return {"days": days, "attention": telegram_attention(posts, own), "source": source, "posts": posts,
+            "modeHint": schedule_hint(posts)}
+
+
+def zhytomyr():
+    """Житомиробленерго: таблица ГПВ на сайте (цвет ячейки — отключение), кодировка cp1251."""
+    url = "https://www.ztoe.com.ua/unhooking-search.php"
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=40) as r:
+        page = r.read().decode("cp1251", "replace")
+    days = {}
+    # Каждая таблица начинается с даты в шапке над часами «00:00-00:30».
+    heads = [(m.start(), m.group(1)) for m in re.finditer(r">\s*(\d{2}\.\d{2}\.\d{4})\s*<", page)
+             if "00:00-00:30" in page[m.end(): m.end() + 3000]]
+    for i, (pos, d) in enumerate(heads):
+        part = page[pos: heads[i + 1][0] if i + 1 < len(heads) else len(page)]
+        day = {}
+        for q, body in re.findall(r"<b[^>]*>\s*([1-6]\.[12])\s*</b>(?:</a>)?</td>(.*?)</tr>", part, re.S):
+            cells = re.findall(r"background:\s*(#[0-9a-fA-F]{6})", body)
+            if len(cells) == 48:
+                day[q] = "".join("1" if c.lower() == "#ffffff" else "0" for c in cells)
+        if len(day) >= 10:
+            dd, mm, yy = d.split(".")
+            days[f"{yy}-{mm}-{dd}"] = day
+    text = clean_text(html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<script.*?</script>|<style.*?</style>", "", page, flags=re.S))))
+    att = re.search(r"УВАГА!.{0,600}?(?=Оберіть|$)", text or "", re.S)
+    return {"days": days, "attention": clean_text(att.group(0))[:600] if att else None, "source": url}
+
+
+def mykolaiv():
+    """Миколаївобленерго: открытый API сайта off.energy.mk.ua (тот же, что показывает их страница)."""
+    base = "https://off.energy.mk.ua/api"
+    slots = {s["id"]: hm(s["start"][:5]) // 30 for s in json.loads(fetch(base + "/schedule/time-series"))}
+    gpv = {q["id"]: q["name"] for q in json.loads(fetch(base + "/outage-queue/by-type/3"))}
+    emergency = [q for t in (1, 2) for q in json.loads(fetch(f"{base}/outage-queue/by-type/{t}")) if q.get("enabled")]
+    days = {}
+    for sch in json.loads(fetch(base + "/v2/schedule/active")):
+        start = dt.datetime.fromisoformat(sch["from"].replace("Z", "+00:00")).astimezone(KYIV)
+        date = (start + dt.timedelta(hours=1)).date().isoformat()
+        day = {q: empty_day() for q in gpv.values()}
+        for s in sch.get("series") or []:
+            q, i = gpv.get(s.get("outage_queue_id")), slots.get(s.get("time_series_id"))
+            if q is None or i is None:
+                continue
+            day[q][i] = "2" if s.get("type") == "PROBABLY_OFF" else "0"
+        days[date] = {q: "".join(v) for q, v in day.items()}
+    att = None
+    if emergency:
+        att = "Застосовано графіки аварійних відключень (ГАВ/СГАВ) — графік може не діяти. Черги: " + \
+              ", ".join(sorted({q["name"] for q in emergency}))
+    return {"days": days, "attention": att, "source": "https://off.energy.mk.ua/"}
+
+
+_UKRENERGO = {}
+
+
+def ukrenergo_posts():
+    """Канал НЕК «Укренерго»: аварийные отключения по областям и общие объявления (раз за запуск)."""
+    if "posts" not in _UKRENERGO:
+        try:
+            _UKRENERGO["posts"] = telegram_posts("Ukrenergo", hours=30, max_pages=3)
+        except Exception as e:
+            log(f"  Укренерго: {e}")
+            _UKRENERGO["posts"] = []
+    return _UKRENERGO["posts"]
+
+
+GPV_ON = re.compile(r"(будуть|буде|діятим\w*|діють|діє|застосовуватим\w*|застосован\w*|застосовуються|запроваджен\w*|внесено зміни|орієнтовний графік заживлення)"
+                    r"[^.]{0,120}?(гпв|графік\w*\s+погодинн|графік\w*\s+заживлення)"
+                    r"|(гпв|графік\w*\s+погодинних\s+(відключень|вимкнень))[^.]{0,40}?(будуть\s+)?(діяти|діятим\w*|застосовуватим\w*)"
+                    r"|орієнтовний графік заживлення|оновлен\w*\s+графік\w*\s+погодинн", re.I)
+GPV_OFF = re.compile(r"(гпв|графік\w*\s+погодинн\w*\s+\w+)[^.]{0,60}?(не\s+(будуть|буде)\s+застосов\w*|не\s+застосовуватим\w*|не\s+діятим\w*|не\s+плануються|скасован\w*)"
+                     r"|не\s+(застосовуватим\w*|плануються|прогнозуються)\s+(\S+\s+){0,2}?(гпв|графік\w*\s+погодинн)|без\s+(графіків|відключень)\s+(погодинн|світла)", re.I)
+
+
+def schedule_hint(posts, now=None):
+    """«schedule» / «none» по последнему объявлению облэнерго о ГПВ на сегодня (None — объявлений нет)."""
+    now = now or dt.datetime.now(KYIV)
+    today, hint = now.date(), None
+    for when, text in posts:
+        local = when.astimezone(KYIV)
+        dates = [d for d in (post_schedules_date(text, local)) if d]
+        date = dates[0] if dates else (local.date() + dt.timedelta(days=1) if re.search(r"\bзавтра\b", text, re.I) else local.date())
+        if date != today:
+            continue
+        if GPV_OFF.search(text):
+            hint = "none"
+        elif GPV_ON.search(text):
+            hint = "schedule"
+    return hint
+
+
+def post_schedules_date(text, local):
+    out = []
+    for m in DATE_ANY.finditer(text[:300]):
+        try:
+            out.append(_date_of(m, local.year))
+        except ValueError:
+            pass
+    return out
+
+
+def mode_only(channels, own, source):
+    """Область без графика по очередям: только режим (ГПВ / аварийные / без отключений).
+
+    Источники: официальный канал облэнерго (если есть) и канал НЕК «Укренерго», который объявляет
+    аварийные отключения по областям. Графики по очередям эти облэнерго публикуют картинкой.
+    """
+    posts = []
+    for ch in channels:
+        try:
+            posts += telegram_posts(ch, hours=30, max_pages=3)
+        except Exception as e:
+            log(f"  канал {ch}: {e}")
+    posts.sort(key=lambda p: p[0])
+    ukr = ukrenergo_posts()
+    att = telegram_attention(sorted(posts + ukr, key=lambda p: p[0]), own)
+    hint = schedule_hint(posts)
+    if hint is None:
+        # Укренерго: «…в усіх регіонах діятимуть графіки погодинних відключень» — значит, и здесь.
+        allr = [(w, t) for w, t in ukr if re.search(r"(в|у)\s+(усіх|всіх)\s+(регіонах|областях)", t, re.I)]
+        hint = schedule_hint(allr)
+    if not channels and not ukr:
+        raise RuntimeError("нет источников")
+    return {"days": {}, "attention": att, "source": source, "modeHint": hint, "modeOnly": True}
+
+
+def with_ukrenergo(fn, own):
+    """Сборщик облэнерго + аварийные отключения, объявленные НЕК «Укренерго» для этой области."""
+    def run():
+        r = fn()
+        r.pop("posts", None)
+        if not detect_mode(r.get("attention")):
+            att = telegram_attention(ukrenergo_posts(), own)
+            if att:
+                r["attention"] = att
+        return r
+    return run
+
+
+def chan(channels, own, source, attention_channels=()):
+    def run():
+        r = channel_schedule(channels, own, source)
+        if attention_channels and not detect_mode(r.get("attention")):
+            try:
+                posts = sorted((p for ch in attention_channels for p in telegram_posts(ch)), key=lambda p: p[0])
+                r["attention"] = telegram_attention(posts, own) or r.get("attention")
+            except Exception as e:
+                log(f"  канал {attention_channels}: {e}")
+        return r
+    return with_ukrenergo(run, own)
+
+
 # ------------------------------------------------------------------ регионы
 
 REGIONS = [
@@ -326,6 +583,26 @@ REGIONS = [
     ("odessa", "Одеська область", "ДТЕК Одеські електромережі", with_channel_attention(lambda: dtek("dtek-oem.com.ua", "odesa"), ["DTEKOdeskiElektromerezhi"], "одес")),
     ("lviv", "Львівська область", "Львівобленерго", with_channel_attention(lviv, ["lvivoblenergo"], "львів")),
     ("zaporizhia", "Запорізька область", "Запоріжжяобленерго", lambda: telegram_gpv(["zoe_alarm", "Zaporizhzhyaoblenergo_news"], "https://www.zoe.com.ua/", "запорі")),
+    # Графики по очередям: сайты и текстовые посты официальных каналов.
+    ("zhytomyr", "Житомирська область", "Житомиробленерго", with_ukrenergo(with_channel_attention(zhytomyr, ["ztoe_ua"], "житомир"), "житомир")),
+    ("mykolaiv", "Миколаївська область", "Миколаївобленерго", with_ukrenergo(with_channel_attention(mykolaiv, ["mk_energy_ua"], "миколаїв"), "миколаїв")),
+    ("kirovohrad", "Кіровоградська область", "Кіровоградобленерго", chan(["SvitloKropyvnytskohoRaionu", "SvitloKropyvnytskyiMisto"], "кіровоград", "https://kiroe.com.ua/", ["kirovogradoblenergo"])),
+    ("rivne", "Рівненська область", "Рівнеобленерго", chan(["rivneoblenergo"], "рівнен", "https://www.roe.vsei.ua/disconnections")),
+    ("khmelnytskyi", "Хмельницька область", "Хмельницькобленерго", chan(["khmelnytskoblenergo"], "хмельниц", "https://hoe.com.ua/")),
+    ("cherkasy", "Черкаська область", "Черкасиобленерго", chan(["pat_cherkasyoblenergo"], "черкас", "https://www.cherkasyoblenergo.com/")),
+    ("kharkiv", "Харківська область", "Харківобленерго", chan(["kharkivenergy"], "харків", "https://oblenergo.kharkiv.ua/")),
+    # Только режим: эти облэнерго публикуют график картинкой или сайт закрыт для зарубежных запросов.
+    ("ivano-frankivsk", "Івано-Франківська область", "Прикарпаттяобленерго", lambda: mode_only(["prykarpattyaoblenergo_official"], "івано-франків", "https://www.oe.if.ua/")),
+    ("ternopil", "Тернопільська область", "Тернопільобленерго", lambda: mode_only(["ternopiloblenerho"], "тернопіл", "https://www.toe.com.ua/")),
+    ("sumy", "Сумська область", "Сумиобленерго", lambda: mode_only(["SumyEnergo"], "сумськ", "https://www.soe.com.ua/consumers/shutdowns")),
+    ("chernihiv", "Чернігівська область", "Чернігівобленерго", lambda: mode_only(["chernigivoblenergo"], "чернігів", "https://www.energy.cn.ua/")),
+    ("chernivtsi", "Чернівецька область", "Чернівціобленерго", lambda: mode_only(["oe_cv_ua"], "чернівец", "https://oblenergo.cv.ua/shutdowns/")),
+    ("volyn", "Волинська область", "Волиньобленерго", lambda: mode_only([], "волин", "https://energy.volyn.ua/")),
+    ("zakarpattia", "Закарпатська область", "Закарпаттяобленерго", lambda: mode_only([], "закарпат", "https://zakarpat.energy/")),
+    ("vinnytsia", "Вінницька область", "Вінницяобленерго", lambda: mode_only([], "вінниц", "https://www.voe.com.ua/")),
+    ("poltava", "Полтавська область", "Полтаваобленерго", lambda: mode_only([], "полтав", "https://www.poe.pl.ua/disconnection/power-outages/")),
+    ("kherson", "Херсонська область", "Херсонобленерго", lambda: mode_only([], "херсон", "https://www.ksoe.com.ua/")),
+    ("donetsk", "Донецька область", "ДТЕК Донецькі електромережі", lambda: mode_only([], "донецьк", "https://www.dtek-dem.com.ua/ua/shutdowns")),
 ]
 
 
@@ -360,10 +637,10 @@ def main():
             merged.update(r["days"])
             r["days"] = {k: v for k, v in sorted(merged.items()) if k >= (today - dt.timedelta(days=8)).isoformat()}
             cur = {k: v for k, v in r["days"].items() if k >= today.isoformat()}
-            mode = detect_mode(r.get("attention")) or ("schedule" if any(("0" in s) for d in cur.values() for s in d.values()) else ("none" if cur else "unknown"))
+            mode = detect_mode(r.get("attention")) or ("schedule" if any(("0" in s) for d in cur.values() for s in d.values()) else ("none" if cur else (r.get("modeHint") or "unknown")))
             body = {"id": rid, "name": name, "operator": operator, "source": r["source"], "mode": mode,
                     "attention": r.get("attention"), "updatedAtSource": r.get("updatedAtSource"), "days": r["days"],
-                    "week": r.get("week") or {}}
+                    "week": r.get("week") or {}, "queueSchedules": bool(r["days"]) or not r.get("modeOnly")}
             h = hashlib.sha1(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
             changed = old.get("hash") != h
             body.update({"hash": h, "changedAt": now.isoformat(timespec="seconds") if changed else old.get("changedAt"),
@@ -372,7 +649,8 @@ def main():
             queues = sorted({q for d in r["days"].values() for q in d}, key=lambda q: tuple(int(x) for x in q.split(".")))
             index.append({"id": rid, "name": name, "operator": operator, "mode": mode, "ok": True, "hash": h,
                           "changedAt": body["changedAt"], "checkedAt": body["checkedAt"],
-                          "avgOffMinutesToday": summarize(r["days"], today), "queues": queues})
+                          "avgOffMinutesToday": summarize(r["days"], today), "queues": queues,
+                          "queueSchedules": body["queueSchedules"]})
             log(f"  ok: {mode}, дней {len(r['days'])}, очередей {len(queues)}, {'ИЗМЕНЕНО' if changed else 'без изменений'}")
         except Exception as e:
             log(f"  ошибка: {e}")

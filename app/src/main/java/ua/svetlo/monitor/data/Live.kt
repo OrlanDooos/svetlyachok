@@ -53,6 +53,8 @@ data class RegionData(
     /** Недельный шаблон оператора (пн…нд), если он его публикует. */
     val week: Map<String, List<String>>,
     val hash: String?, val changedAt: OffsetDateTime?, val checkedAt: OffsetDateTime?,
+    /** false — источник даёт только режим области, без графика по очередям. */
+    val queueSchedules: Boolean = true,
 )
 
 /** Кэш на диске + загрузка из сети. Всё, что видит интерфейс, читается из кэша. */
@@ -219,6 +221,7 @@ class ScheduleStore(private val dir: File) {
                 o.getString("id"), o.optString("name"), o.optString("operator"), o.optString("source"), RegionMode.of(o.optString("mode")),
                 o.optString("attention").takeIf { it.isNotEmpty() && it != "null" }, o.optString("updatedAtSource").takeIf { it.isNotEmpty() && it != "null" },
                 days, week, o.optString("hash").ifEmpty { null }, time(o, "changedAt"), time(o, "checkedAt"),
+                queueSchedules = o.optBoolean("queueSchedules", true),
             )
         }
     }
@@ -263,6 +266,9 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
                 schedulesSuspended = true, attention = data?.attention, updatedAt = updated, operator = data?.operator ?: sum?.operator)
         }
         val today = schedule(region, queue, at.toLocalDate())
+        if (!today.known && data?.queueSchedules == false) {
+            return NowState(mode.type, null, null, null, null, null, false, data.attention, updated, data.operator, regionOnly = true)
+        }
         if (!today.known) {
             return NowState(OutageType.NoData, null, null, null, null, null, false, data?.attention, updated, data?.operator ?: sum?.operator)
         }

@@ -79,6 +79,8 @@ data class NowState(
     val attention: String? = null,
     val updatedAt: java.time.OffsetDateTime? = null,
     val operator: String? = null,
+    /** Оператор публикует только режим области (график по очередям — картинкой): статус без часов. */
+    val regionOnly: Boolean = false,
 )
 
 data class RegionStatus(
