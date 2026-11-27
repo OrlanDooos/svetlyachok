@@ -738,8 +738,11 @@ def parse_cards(words):
         same = [(i, l) for i, l in cands if l[0] >= colx - 3 * h]
         i, _ = max(same, key=lambda il: (il[1][1], il[1][0]))
         if b == 0: b = 1440
-        if not (0 <= a < b <= 1440) or a % 30 or b % 30: raise ValueError(f"время {a}-{b}")
-        res[OCR_QUEUES[i]].append((a, b))
+        q = OCR_QUEUES[i]
+        if res[q] is None: continue
+        # неправдоподобное время — эта подочередь в этом варианте не распознана (голос «не знаю»)
+        if not (0 <= a < b <= 1440) or a % 30 or b % 30: res[q] = None; continue
+        res[q].append((a, b))
     return date, res
 
 
@@ -774,12 +777,14 @@ def parse_grid_boxes(words, xs, ys, queues=OCR_QUEUES):
         if not m: continue
         a, b = int(m.group(1)) * 60 + int(m.group(2)), int(m.group(3)) * 60 + int(m.group(4))
         if b == 0: b = 1440
-        if not (0 <= a < b <= 1440) or a % 30 or b % 30: raise ValueError(f"время {t}")
         cx, cy = x + w / 2, y + h / 2
         ci = [i for i, (s, e) in enumerate(xs) if s <= cx <= e]
         ri = [i for i, (s, e) in enumerate(ys) if s <= cy <= e]
         if not ci or not ri: raise ValueError(f"интервал {t} вне карточек")
-        res[queues[ri[0] * len(xs) + ci[0]]].append((a, b))
+        q = queues[ri[0] * len(xs) + ci[0]]
+        if res[q] is None: continue
+        if not (0 <= a < b <= 1440) or a % 30 or b % 30: res[q] = None; continue
+        res[q].append((a, b))
     return res
 
 
@@ -793,13 +798,15 @@ def ocr_available():
 
 
 def ocr_schedule(img_bytes, layout):
-    """Распознаёт картинку графика несколькими способами и берёт результат, только если он
-    совпал минимум в 3 вариантах и встречается вдвое чаще любого другого. Иначе — None."""
+    """Распознаёт картинку графика несколькими способами. Каждая подочередь принимается, только если
+    её интервалы совпали минимум в 3 вариантах и встречаются вдвое чаще любого другого прочтения.
+    Если хоть одна подочередь не прошла проверку — None (картинку не берём целиком)."""
     import io
     from collections import Counter
     from PIL import Image
     img = Image.open(io.BytesIO(img_bytes))
-    votes, dates = Counter(), Counter()
+    votes = {q: Counter() for q in OCR_QUEUES}
+    dates = Counter()
     boxes = None
     if layout == "chernihiv":
         boxes = color_boxes(img, lambda p: p[0] > 220 and 150 < p[1] < 215 and p[2] < 180)
@@ -815,15 +822,24 @@ def ocr_schedule(img_bytes, layout):
                     date, res = parse_cards(words)
             except Exception:
                 continue
-            votes[json.dumps(res, sort_keys=True)] += 1
+            for q in OCR_QUEUES:
+                v = res.get(q, [])
+                votes[q][json.dumps(None if v is None else sorted(map(list, v)))] += 1
             if date:
                 dates[date] += 1
-    top = votes.most_common(2)
-    if not top or top[0][1] < 3 or (len(top) > 1 and top[0][1] < 2 * top[1][1]):
-        return None
-    res = json.loads(top[0][0])
-    return {"date": dates.most_common(1)[0][0] if dates else None,
-            "queues": {q: ranges_day(v) for q, v in res.items()}}
+    out = {}
+    for q, c in votes.items():
+        # «не распознано» не голосует; прочтение, где просто пропущены строки (подмножество лидера),
+        # лидеру не противоречит — OCR чаще теряет строку, чем выдумывает её
+        reads = [(json.loads(k), n) for k, n in c.most_common() if k != "null"]
+        if not reads:
+            return None
+        best, n = reads[0]
+        against = max([m for r, m in reads[1:] if not set(map(tuple, r)) < set(map(tuple, best))], default=0)
+        if n < 3 or n < 2 * against:
+            return None
+        out[q] = ranges_day(best)
+    return {"date": dates.most_common(1)[0][0] if dates else None, "queues": out}
 
 
 def telegram_photos(channel, hours=36):
