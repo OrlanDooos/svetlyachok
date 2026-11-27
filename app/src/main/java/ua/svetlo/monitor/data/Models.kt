@@ -81,6 +81,8 @@ data class NowState(
     val operator: String? = null,
     /** Оператор публикует только режим области (график по очередям — картинкой): статус без часов. */
     val regionOnly: Boolean = false,
+    /** График не от облэнерго (фан-канал, агрегатор) — показываем пометку. */
+    val sourceNote: String? = null,
 )
 
 data class RegionStatus(

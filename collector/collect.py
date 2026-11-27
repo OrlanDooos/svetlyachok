@@ -916,11 +916,21 @@ def volt_region(slug, own, source_channels=()):
         if days:
             r.pop("modeOnly", None)
             r["days"] = days
+            r["sourceNote"] = "Графік — з неофіційного агрегатора volt-outage.com (бере дані з сайту обленерго)"
         return r
     return run
 
 
-def with_fallback_days(fn, fallback):
+def fan(fn, note):
+    def run():
+        r = fn()
+        if r.get("days"):
+            r["sourceNote"] = note
+        return r
+    return run
+
+
+def with_fallback_days(fn, fallback, note):
     """Если основной источник не дал график на какую-то дату, берём его из запасного (фан-источника)."""
     def run():
         r = fn()
@@ -935,6 +945,7 @@ def with_fallback_days(fn, fallback):
             r.setdefault("days", {})[d] = extra[d]
         if added:
             r.pop("modeOnly", None)
+            r["sourceNote"] = note
             log(f"  из запасного источника: {', '.join(added)}")
         return r
     return run
@@ -1050,7 +1061,8 @@ REGIONS = [
     ("odessa", "Одеська область", "ДТЕК Одеські електромережі", with_channel_attention(lambda: dtek("dtek-oem.com.ua", "odesa"), ["DTEKOdeskiElektromerezhi"], "одес")),
     ("lviv", "Львівська область", "Львівобленерго", with_channel_attention(lviv, ["lvivoblenergo"], "львів")),
     ("zaporizhia", "Запорізька область", "Запоріжжяобленерго", with_fallback_days(lambda: telegram_gpv(["zoe_alarm", "Zaporizhzhyaoblenergo_news"], "https://www.zoe.com.ua/", "запорі"),
-                                                                            lambda: channel_schedule(["zp_energy"], "запорі", "https://t.me/zp_energy")["days"])),
+                                                                            lambda: channel_schedule(["zp_energy"], "запорі", "https://t.me/zp_energy")["days"],
+                                                                            "Частина графіка — з неофіційного каналу t.me/zp_energy: в офіційних каналах його ще немає")),
     # Графики по очередям: сайты и текстовые посты официальных каналов.
     ("zhytomyr", "Житомирська область", "Житомиробленерго", with_ukrenergo(with_channel_attention(zhytomyr, ["ztoe_ua"], "житомир"), "житомир")),
     ("mykolaiv", "Миколаївська область", "Миколаївобленерго", with_ukrenergo(with_channel_attention(mykolaiv, ["mk_energy_ua"], "миколаїв"), "миколаїв")),
@@ -1062,13 +1074,16 @@ REGIONS = [
     # Только режим: эти облэнерго публикуют график картинкой или сайт закрыт для зарубежных запросов.
     ("ivano-frankivsk", "Івано-Франківська область", "Прикарпаттяобленерго", photo_region(["prykarpattyaoblenergo_official"], "івано-франків", "https://www.oe.if.ua/", "cards")),
     ("ternopil", "Тернопільська область", "Тернопільобленерго", volt_region("ternopilska-oblast", "тернопіл", ["ternopiloblenerho"])),
-    ("sumy", "Сумська область", "Сумиобленерго", with_fallback_days(photo_region(["SumyEnergo"], "сумськ", "https://www.soe.com.ua/consumers/shutdowns", "cards"), lambda: volt("sumska-oblast"))),
+    ("sumy", "Сумська область", "Сумиобленерго", with_fallback_days(photo_region(["SumyEnergo"], "сумськ", "https://www.soe.com.ua/consumers/shutdowns", "cards"), lambda: volt("sumska-oblast"),
+                                                                 "Графік — з неофіційного агрегатора volt-outage.com: картинку Сумиобленерго не вдалося надійно розпізнати")),
     ("chernihiv", "Чернігівська область", "Чернігівобленерго", photo_region(["chernigivoblenergo"], "чернігів", "https://www.energy.cn.ua/", "chernihiv")),
     ("chernivtsi", "Чернівецька область", "Чернівціобленерго", volt_region("chernivetska-oblast", "чернівец", ["oe_cv_ua"])),
     ("volyn", "Волинська область", "Волиньобленерго", inneti_region("api-voe-poweron.inneti.net", "volyn", "волин", "https://energy.volyn.ua/")),
     ("zakarpattia", "Закарпатська область", "Закарпаттяобленерго", inneti_region("api-outage-zakarpat-energy.inneti.net", "zakarpattia", "закарпат", "https://zakarpat.energy/")),
     ("vinnytsia", "Вінницька область", "Вінницяобленерго", volt_region("vinnytska-oblast", "вінниц")),
-    ("poltava", "Полтавська область", "Полтаваобленерго", with_fallback_days(chan(["svitlo_poltava_ua"], "полтав", "https://t.me/svitlo_poltava_ua"), lambda: volt("poltavska-oblast"))),
+    ("poltava", "Полтавська область", "Полтаваобленерго", with_fallback_days(fan(chan(["svitlo_poltava_ua"], "полтав", "https://t.me/svitlo_poltava_ua"),
+                                                                                 "Графік — з неофіційного каналу «Світло Полтавщина» (t.me/svitlo_poltava_ua)"),
+                                                                             lambda: volt("poltavska-oblast"), "Графік — з неофіційного агрегатора volt-outage.com")),
     ("kherson", "Херсонська область", "Херсонобленерго", lambda: mode_only([], "херсон", "https://www.ksoe.com.ua/")),
     ("donetsk", "Донецька область", "ДТЕК Донецькі електромережі", volt_region("donetska-oblast", "донецьк")),
 ]
@@ -1124,7 +1139,8 @@ def main():
             mode = detect_mode(r.get("attention")) or ("schedule" if any(("0" in s) for d in cur.values() for s in d.values()) else ("none" if cur else (r.get("modeHint") or "unknown")))
             body = {"id": rid, "name": name, "operator": operator, "source": r["source"], "mode": mode,
                     "attention": r.get("attention"), "updatedAtSource": r.get("updatedAtSource"), "days": r["days"],
-                    "week": r.get("week") or {}, "queueSchedules": bool(r["days"]) or not r.get("modeOnly")}
+                    "week": r.get("week") or {}, "queueSchedules": bool(r["days"]) or not r.get("modeOnly"),
+                    "sourceNote": r.get("sourceNote")}
             h = hashlib.sha1(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
             changed = old.get("hash") != h
             body.update({"hash": h, "changedAt": now.isoformat(timespec="seconds") if changed else old.get("changedAt"),

@@ -276,6 +276,7 @@ private fun StatusCard(state: NowState, now: LocalDateTime, supported: Boolean, 
                 state.type == OutageType.None -> Text(tr("Відключень за графіком немає", "Отключений по графику нет"), style = Type.body, color = c.ink2)
                 else -> ScheduledBlock(state, now)
             }
+            state.sourceNote?.let { Text(it, style = Type.caption, color = c.muted, textAlign = TextAlign.Center) }
         }
     }
 }

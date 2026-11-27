@@ -397,6 +397,7 @@ fun SourcesScreen(repo: OutageRepository, onBack: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(r.name, style = Type.bodyBold, color = c.ink)
                         Text(listOfNotNull(sm?.operator, r.type.title).joinToString(" · "), style = Type.small, color = c.muted)
+                        rd?.sourceNote?.let { Text(it, style = Type.caption, color = c.muted) }
                     }
                     Text(if (sm?.ok == false) tr("помилка", "ошибка") else ago(sm?.checkedAt), style = Type.caption, color = if (sm?.ok == false) c.redInk else c.muted)
                 }
