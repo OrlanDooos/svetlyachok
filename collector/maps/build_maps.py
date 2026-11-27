@@ -62,6 +62,14 @@ def build(cid, rel, bbox, n, out_dir):
             open(os.path.join(tiles, "zoe.json"), "wb").write(r.read())
     except Exception as ex:
         print(f"  нет списка адресов {region}: {ex} — номера не оцениваем", flush=True)
+    # Дома, отмеченные жителями (сервер server/pins, подтверждение 2+ установками).
+    pins_url = os.environ.get("PINS_URL", "").rstrip("/")
+    if pins_url:
+        try:
+            with urllib.request.urlopen(f"{pins_url}/confirmed?region={region}", timeout=60) as r:
+                open(os.path.join(tiles, "pins.json"), "wb").write(r.read())
+        except Exception as ex:
+            print(f"  нет отметок жителей: {ex}", flush=True)
     target = os.path.join(out_dir, f"{cid}.bin")
     subprocess.run([sys.executable, os.path.join(HERE, "gen_city_bin.py"), tiles, target, os.path.join(HERE, f"{cid}.meta.json")], check=True)
     return target

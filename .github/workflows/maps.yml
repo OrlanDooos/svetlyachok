@@ -1,9 +1,9 @@
 name: Build maps
-# Раз в неделю пересобираем карты домов из OpenStreetMap и кладём их в ветку maps.
+# Каждый день пересобираем карты домов из OpenStreetMap и кладём их в ветку maps.
 # Сборщик графиков (collect.yml) копирует их в ветку data, откуда их скачивает приложение.
 on:
   schedule:
-    - cron: '30 2 * * 1'
+    - cron: '30 2 * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - name: Build
+        env:
+          PINS_URL: ${{ vars.PINS_URL }}
         run: python3 collector/maps/build_maps.py out/v1/maps
       - name: Publish
         run: |

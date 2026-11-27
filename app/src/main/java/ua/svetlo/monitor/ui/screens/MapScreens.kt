@@ -2,6 +2,7 @@ package ua.svetlo.monitor.ui.screens
 
 import ua.svetlo.monitor.data.tr
 import ua.svetlo.monitor.data.Visicom
+import ua.svetlo.monitor.data.Pins
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -401,8 +402,25 @@ fun CityMapScreen(
     val scope = rememberCoroutineScope()
     val zoomAnim = remember { Animatable(1f) }
 
-    val suggestions = remember(query, city) {
-        if (query.length < 2) emptyList() else city.buildings.indices.filter { addrOf(it)?.contains(query.trim(), true) == true }.distinctBy { addrOf(it) }.take(5)
+    // Подсказки: дома на карте и адреса из списка облэнерго, даже если дома на карте нет (null вместо индекса).
+    val suggestions: List<Pair<Int?, String>> = remember(query, city, addrIdx, visicomAddr) {
+        if (query.length < 2) emptyList() else {
+            val onMap = city.buildings.indices.filter { addrOf(it)?.contains(query.trim(), true) == true }.distinctBy { addrOf(it) }.take(5).map { it to addrOf(it)!! }
+            val fromList = addrIdx?.search(query)?.filter { a -> onMap.none { addrIdx.same(it.second, a) } }?.map { a ->
+                city.buildings.indices.firstOrNull { addrIdx.same(addrOf(it), a) } to a
+            } ?: emptyList()
+            (onMap + fromList).distinctBy { it.second }.take(6)
+        }
+    }
+    // Адрес из списка, которого нет на карте: житель может отметить свой дом.
+    var pending by remember(city) { mutableStateOf<String?>(null) }
+    var placing by remember(city) { mutableStateOf(false) }
+    fun place(i: Int) {
+        val a = pending ?: return
+        val b = city.buildings[i]
+        onSetAddress(houseKey(city, b), a)
+        if (city.hasOrigin) { val (lon, lat) = city.insideLonLat(b); scope.launch { Pins.submit(ctx, city.region, a, lon, lat) } }
+        pending = null; placing = false; picked = i
     }
 
     Box(Modifier.fillMaxSize().clipToBounds().background(c.mapBg)) {
@@ -429,7 +447,8 @@ fun CityMapScreen(
                             detectTapGestures { o ->
                                 val mx = center.x + (o.x - wpx / 2f) / zoom
                                 val my = center.y + (o.y - hpx / 2f) / zoom
-                                picked = index.hit(city, mx, my)
+                                val hit = index.hit(city, mx, my)
+                                if (placing) { if (hit != null) place(hit) } else { picked = hit; if (hit != null) pending = null }
                             }
                         },
                 ) {
@@ -497,10 +516,11 @@ fun CityMapScreen(
                     }
                     AnimatedVisibility(suggestions.isNotEmpty()) {
                         Column(Modifier.fillMaxWidth().shadow(10.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(c.surface)) {
-                            suggestions.forEach { i ->
-                                val b = city.buildings[i]
-                                Text(addrOf(i) ?: "", style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clickable {
-                                    picked = i; center = Offset(b.cx, b.cy); zoom = max(zoom, 2.2f); query = ""
+                            suggestions.forEach { (i, a) ->
+                                Text(a, style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clickable {
+                                    if (i != null) { val b = city.buildings[i]; picked = i; pending = null; center = Offset(b.cx, b.cy); zoom = max(zoom, 2.2f) }
+                                    else { picked = null; pending = a; placing = false }
+                                    query = ""
                                 }.padding(horizontal = 16.dp, vertical = 14.dp))
                             }
                         }
@@ -529,7 +549,8 @@ fun CityMapScreen(
                     Modifier.width(if (w.shortHeight) 320.dp else 380.dp).fillMaxHeight().background(c.bg).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea, fromVisicom = addrOf(it) != null && addrOf(it) == visicomAddr[it], lookingUp = lookingUp == it) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
+                    pending?.let { a -> PendingPanel(a, addrIdx?.queuesFor(a), city, repo, now, placing, onPlace = { placing = true }, onCancel = { pending = null; placing = false }) }
+                        ?: picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea, fromVisicom = addrOf(it) != null && addrOf(it) == visicomAddr[it], lookingUp = lookingUp == it) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
                         ?: Text(tr("Натисніть на будинок, щоб побачити адресу і чергу. Колір — чи є зараз світло за графіком.", "Нажмите на дом, чтобы увидеть адрес и очередь. Цвет — есть ли сейчас свет по графику."), style = Type.body, color = c.ink2)
                 }
             }
@@ -539,7 +560,7 @@ fun CityMapScreen(
         if (!w.twoPane) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 MapLegend(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).align(Alignment.CenterHorizontally))
-                AnimatedVisibility(picked != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+                AnimatedVisibility(picked != null || pending != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                     Column(
                         Modifier.fillMaxWidth().widthIn(max = 640.dp)
                             .shadow(24.dp, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
@@ -548,16 +569,43 @@ fun CityMapScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(5.dp).clip(CircleShape).background(c.line))
-                        picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea, fromVisicom = addrOf(it) != null && addrOf(it) == visicomAddr[it], lookingUp = lookingUp == it) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
+                        pending?.let { a -> PendingPanel(a, addrIdx?.queuesFor(a), city, repo, now, placing, onPlace = { placing = true }, onCancel = { pending = null; placing = false }) }
+                        ?: picked?.let { BuildingPanel(city.buildings[it], addrOf(it), s.houseAddr.containsKey(houseKey(city, city.buildings[it])), city, mine[it], queueKeys[it].takeIf { k -> k != "" && k != "crit" }?.split(','), addrIdx, repo, now, onMyHome, onArea, fromVisicom = addrOf(it) != null && addrOf(it) == visicomAddr[it], lookingUp = lookingUp == it) { a -> onSetAddress(houseKey(city, city.buildings[it]), a) } }
                     }
                 }
-                if (picked == null && !w.useRail) Box(Modifier.height(BottomBarSpace))
+                if (picked == null && pending == null && !w.useRail) Box(Modifier.height(BottomBarSpace))
             }
         }
     }
 }
 
 /** Цвет и подпись дома по его подочередям: все со светом — зелёный, все без — цвет отключения, по-разному — «частично». */
+@Composable
+private fun PendingPanel(
+    address: String, queues: List<String>?, city: CityMap, repo: OutageRepository, now: LocalDateTime, placing: Boolean,
+    onPlace: () -> Unit, onCancel: () -> Unit,
+) {
+    val c = Svetlo.colors
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(address, style = Type.h2, color = c.ink)
+            Text(when {
+                queues == null -> city.city
+                queues.size == 1 -> tr("Черга ${queues[0]}", "Очередь ${queues[0]}")
+                else -> tr("Під'їзди в різних чергах: ${queues.joinToString(", ")}", "Подъезды в разных очередях: ${queues.joinToString(", ")}")
+            }, style = Type.small, color = c.muted)
+        }
+        if (queues != null) { val (col, label) = houseLook(repo, city.region, queues, now); Pill(label, bg = c.surface2, fg = c.ink, border = null, dot = col) }
+    }
+    if (placing) {
+        Text(tr("Натисніть на свій будинок на мапі.", "Нажмите на свой дом на карте."), style = Type.bodyBold, color = c.accent)
+        Text(tr("Скасувати", "Отмена"), style = Type.smallBold, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onCancel).padding(vertical = 8.dp))
+    } else {
+        Text(tr("Цей будинок ще не позначений на мапі. Знайдіть його і позначте — він з'явиться і в інших.", "Этот дом ещё не отмечен на карте. Найдите его и отметьте — он появится и у других."), style = Type.small, color = c.ink2)
+        PrimaryButton(tr("Вказати мій дім на мапі", "Указать мой дом на карте"), onPlace, Modifier.fillMaxWidth())
+    }
+}
+
 private fun houseLook(repo: OutageRepository, region: String, queues: List<String>, now: LocalDateTime): Pair<Color, String> {
     val types = queues.map { repo.queueOffNow(region, it, now) }
     return when {

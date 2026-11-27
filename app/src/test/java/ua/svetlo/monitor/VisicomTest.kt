@@ -69,4 +69,17 @@ class VisicomTest {
         assertEquals("дальня" to "вул. Дальня", idx.streetOf("вул. Стара, 1"))
         assertEquals(null, idx.streetOf("вул. Невідома, 1"))
     }
+
+    @Test fun searchWholeList() {
+        val idx = AddressIndex("ZOE", "", mapOf("дальня" to mapOf("14" to "3.1", "14а" to "3.2", "141" to "1.1", "2" to "2.2")), emptyMap(), listOf("дальня" to "вул. Дальня"))
+        assertEquals(listOf("вул. Дальня, 14", "вул. Дальня, 14а", "вул. Дальня, 141"), idx.search("дальня 14"))
+        assertEquals(listOf("вул. Дальня, 14"), idx.search("вулиця Дальня, 14", limit = 1))
+        assertTrue(idx.search("14").isEmpty())
+        assertTrue(idx.same("вулиця Дальня, 14А", "вул. Дальня, 14а"))
+    }
+
+    @Test fun pinBody() {
+        val b = org.json.JSONObject(ua.svetlo.monitor.data.Pins.body("zaporizhia", "вул. Дальня, 14", 35.2034281, 47.8131623, "id"))
+        assertEquals(35.203428, b.getDouble("lon"), 1e-9); assertEquals("вул. Дальня, 14", b.getString("address"))
+    }
 }
