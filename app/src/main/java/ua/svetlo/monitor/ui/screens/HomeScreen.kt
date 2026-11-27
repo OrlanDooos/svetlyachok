@@ -95,6 +95,7 @@ fun HomeScreen(
     onAddresses: () -> Unit,
     onSchedule: () -> Unit,
     onArea: () -> Unit,
+    onDetail: () -> Unit = onSchedule,
     onSources: () -> Unit,
     onNotif: () -> Unit,
     onSelect: (String) -> Unit,
@@ -107,7 +108,7 @@ fun HomeScreen(
     val tomorrow = repo.schedule(addr.region, addr.queue, now.toLocalDate().plusDays(1))
     val supported = repo.summary(addr.region) != null
     if (LocalLargeText.current) {
-        LargeHome(s, state, now, onAddresses, onSchedule)
+        LargeHome(s, state, now, onAddresses, onSchedule, onDetail)
         return
     }
     val w = LocalWindow.current
@@ -118,8 +119,8 @@ fun HomeScreen(
     }
     val status: @Composable () -> Unit = { StatusCard(state, now, supported, s.selected.queue) }
     val todayCard: @Composable () -> Unit = {
-        SCard {
-            SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Завтра", "Завтра"), onSchedule)
+        SCard(onClick = onDetail) {
+            SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Детально", "Подробно"), onDetail)
             val frac = (now.hour * 60 + now.minute) / 1440f
             if (state.schedulesSuspended) {
                 Text(tr("Діють аварійні відключення: графік може не діяти, світло можуть вимкнути й поза ним.", "Действуют аварийные отключения: график может не действовать, свет могут выключить и вне его."), style = Type.small, color = Svetlo.colors.redInk)
@@ -312,7 +313,7 @@ private fun EmergencyBlock(state: NowState, color: Color) {
 
 /** Упрощённая главная для режима крупного шрифта: контрастно, только главное. */
 @Composable
-private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddresses: () -> Unit, onSchedule: () -> Unit) {
+private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddresses: () -> Unit, onSchedule: () -> Unit, onDetail: () -> Unit) {
     val c = Svetlo.colors
     val w = LocalWindow.current
     val bg = when {
@@ -359,7 +360,8 @@ private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddres
                 Text(tr("Увімкнуть о ${b.hm()}", "Включат в ${b.hm()}"), style = Type.bodyBold.copy(fontSize = 18.sp), color = c.ink2)
             }
         }
-        PrimaryButton(tr("Графік на тиждень", "График на неделю"), onSchedule, Modifier.fillMaxWidth().heightIn(min = 72.dp), outlined = true)
+        PrimaryButton(tr("Графік по годинах", "График по часам"), onDetail, Modifier.fillMaxWidth().heightIn(min = 72.dp), outlined = true)
+        PrimaryButton(tr("Графік на завтра", "График на завтра"), onSchedule, Modifier.fillMaxWidth().heightIn(min = 72.dp), outlined = true)
     }
 }
 

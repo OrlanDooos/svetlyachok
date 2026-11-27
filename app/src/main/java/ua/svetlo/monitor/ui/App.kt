@@ -84,6 +84,7 @@ import ua.svetlo.monitor.ui.screens.OnboardingScreen
 import ua.svetlo.monitor.ui.screens.ScheduleScreen
 import ua.svetlo.monitor.ui.screens.WidgetsScreen
 import ua.svetlo.monitor.ui.screens.WindowsScreen
+import ua.svetlo.monitor.ui.screens.DetailScheduleScreen
 import ua.svetlo.monitor.ui.theme.Svetlo
 import ua.svetlo.monitor.ui.theme.SvetloTheme
 import ua.svetlo.monitor.ui.theme.Type
@@ -103,6 +104,8 @@ object Routes {
     const val Windows = "windows"
     const val Widgets = "widgets"
     const val Feedback = "feedback"
+    const val Detail = "detail?day={day}"
+    fun detail(day: Int = 0) = "detail?day=$day"
 }
 
 private data class Tab(val route: String, val title: String, val icon: ImageVector, val matches: Set<String>)
@@ -110,7 +113,7 @@ private data class Tab(val route: String, val title: String, val icon: ImageVect
 private val Tabs: List<Tab> get() = listOf(
     Tab(Routes.Home, tr("Головна", "Главная"), Icons.Rounded.Home, setOf(Routes.Home)),
     Tab(Routes.Map, tr("Мапа", "Карта"), Icons.Rounded.Map, setOf(Routes.Map, Routes.City, Routes.Area)),
-    Tab(Routes.Schedule, tr("Графік", "График"), Icons.Rounded.CalendarMonth, setOf(Routes.Schedule, Routes.Windows)),
+    Tab(Routes.Schedule, tr("Графік", "График"), Icons.Rounded.CalendarMonth, setOf(Routes.Schedule, Routes.Windows, Routes.Detail)),
     Tab(Routes.More, tr("Ще", "Ещё"), Icons.Rounded.Tune, setOf(Routes.More, Routes.Addresses, Routes.Notif, Routes.Sources, Routes.Widgets)),
 )
 
@@ -265,6 +268,7 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
             HomeScreen(repo, s, now,
                 onAddresses = { nav.navigate(Routes.Addresses) },
                 onSchedule = { nav.goTab(Routes.Schedule) },
+                onDetail = { nav.navigate(Routes.detail(0)) },
                 onArea = { nav.navigate(Routes.Area) },
                 onSources = { nav.navigate(Routes.Sources) },
                 onRefresh = onRefresh,
@@ -291,6 +295,7 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
         composable(Routes.Area) { AreaScreen(repo, s, onBack = { nav.popBackStack() }) }
         composable(Routes.Schedule) {
             ScheduleScreen(repo, s, now, onRefresh = onRefresh, onWindows = { nav.navigate(Routes.Windows) },
+                onDetail = { d -> nav.navigate(Routes.detail(d)) },
                 onRemind = { on -> update { it.copy(remindMinutes = if (on) 15 else 0) } })
         }
         composable(Routes.More) { MoreScreen(s, nav = { nav.navigate(it) }, update = update) }
@@ -298,6 +303,9 @@ private fun AppNavHost(repo: OutageRepository, s: Settings, now: LocalDateTime, 
         composable(Routes.Notif) { NotifScreen(s, onBack = { nav.popBackStack() }, update = update) }
         composable(Routes.Sources) { SourcesScreen(repo, onBack = { nav.popBackStack() }) }
         composable(Routes.Feedback) { FeedbackScreen(s, onBack = { nav.popBackStack() }) }
+        composable(Routes.Detail) { e ->
+            DetailScheduleScreen(repo, s, now, startDay = e.arguments?.getString("day")?.toIntOrNull() ?: 0, onBack = { nav.popBackStack() })
+        }
         composable(Routes.Windows) { WindowsScreen(repo, s, now, onBack = { nav.popBackStack() }) }
         composable(Routes.Widgets) { WidgetsScreen(repo, s, now, onBack = { nav.popBackStack() }) }
     }
