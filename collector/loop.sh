@@ -20,6 +20,8 @@ publish() {
 }
 while :; do
   started=$(date +%s)
+  # Берём свежий код сборщика из main: исправления начинают работать сразу, не дожидаясь нового запуска.
+  git fetch -q --depth 1 origin main 2>/dev/null && git checkout -q FETCH_HEAD -- collector/collect.py collector/addresses.py 2>/dev/null && git reset -q
   python3 collector/collect.py || echo "сборщик завершился с ошибкой"
   publish || echo "не удалось опубликовать"
   next=$(( started + ${INTERVAL:-600} ))

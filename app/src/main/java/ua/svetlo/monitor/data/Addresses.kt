@@ -17,6 +17,45 @@ class AddressIndex(
     fun houses(key: String): List<String> = (streets[key]?.keys ?: emptySet()).sortedWith(compareBy({ it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }, { it }))
 
 
+    /**
+     * Поиск по всему списку облэнерго, даже если дома нет на карте: «дальня 14» → «вул. Дальня, 14».
+     * Слова без цифр ищем в названии улицы, слово с цифрой — начало номера дома.
+     */
+    fun search(query: String, limit: Int = 6): List<String> {
+        val words = lat(query.lowercase()).split(Regex("[\\s,.]+")).filter { it.isNotEmpty() }
+        val num = words.firstOrNull { it[0].isDigit() }?.let { normHouse(it) }
+        val name = words.filter { !it[0].isDigit() && it !in TypeWords }
+        if (name.isEmpty() || name.joinToString("").length < 2) return emptyList()
+        val out = ArrayList<String>()
+        for ((key, title) in streetNames) {
+            val t = lat(title.lowercase()).replace("'", "").replace("’", "")
+            if (!name.all { w -> t.contains(w.replace("'", "").replace("’", "")) || key.contains(w) }) continue
+            val hs = houses(key)
+            if (num == null) { hs.take(3).forEach { out += "$title, $it" } }
+            else hs.filter { it == num }.plus(hs.filter { it != num && it.startsWith(num) }).forEach { out += "$title, $it" }
+            if (out.size >= limit) break
+        }
+        return out.take(limit)
+    }
+
+    /** Один и тот же дом? Сравниваем по ключу улицы (с учётом старых названий) и номеру. */
+    fun same(a: String?, b: String?): Boolean {
+        if (a == null || b == null) return false
+        val ka = streetOf(a)?.first ?: return false
+        return ka == streetOf(b)?.first && normHouse(a.substringAfterLast(',')) == normHouse(b.substringAfterLast(','))
+    }
+
+    /** Улица адреса в списке («вул. Дальня, 14» → ключ и название), чтобы сразу предложить её номера. */
+    fun streetOf(address: String?): Pair<String, String>? {
+        val cut = address?.lastIndexOf(',') ?: return null
+        if (cut <= 0) return null
+        for (k in streetKeys(address.substring(0, cut))) {
+            val key = aliases[k] ?: k
+            if (streets.containsKey(key)) return key to (streetNames.firstOrNull { it.first == key }?.second ?: address.substring(0, cut))
+        }
+        return null
+    }
+
     /** Подочереди дома («6.1» или «1.2,5.1», если подъезды в разных) или null, если дома нет в списках. */
     fun queuesFor(address: String?): List<String>? {
         if (address.isNullOrBlank()) return null

@@ -1,0 +1,12 @@
+# Сервер отметок домов от жителей «Светлячка». Cloudflare Workers + D1 (бесплатный тариф).
+# Выкладка: npx wrangler d1 create svetlyachok-pins  → вписать database_id ниже,
+#           npx wrangler d1 execute svetlyachok-pins --remote --file schema.sql
+#           npx wrangler deploy
+name = "svetlyachok-pins"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "svetlyachok-pins"
+database_id = "cd6ca06d-5fac-477e-8155-71ae29500cbd"
