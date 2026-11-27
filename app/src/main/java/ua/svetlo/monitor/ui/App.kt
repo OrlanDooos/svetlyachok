@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package ua.svetlo.monitor.ui
 
 import ua.svetlo.monitor.data.tr
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -109,8 +112,12 @@ private val Tabs: List<Tab> get() = listOf(
     Tab(Routes.More, tr("Ще", "Ещё"), Icons.Rounded.Tune, setOf(Routes.More, Routes.Addresses, Routes.Notif, Routes.Sources, Routes.Widgets)),
 )
 
-/** Нижняя панель занимает примерно столько места, контент оставляет под неё отступ. */
-val BottomBarSpace = 96.dp
+/** Высота нижней панели вместе с системной навигацией (меряется при отрисовке; крупный шрифт делает её выше). */
+private val measuredBar = androidx.compose.runtime.mutableStateOf(96.dp)
+
+/** Сколько места снизу оставлять под нижнюю панель. Пока открыта клавиатура, панель скрыта — места не нужно. */
+val BottomBarSpace: androidx.compose.ui.unit.Dp
+    @Composable get() = if (WindowInsets.isImeVisible) 0.dp else maxOf(96.dp, measuredBar.value)
 
 @Composable
 fun SvetloRoot(vm: AppViewModel) {
@@ -157,7 +164,7 @@ private fun AppShell(repo: OutageRepository, s: Settings, now: LocalDateTime, up
         if (showNav && w.useRail) NavRail(route, nav)
         Box(Modifier.weight(1f).fillMaxHeight()) {
             AppNavHost(repo, s, now, update, nav, start, onRefresh)
-            if (showNav && !w.useRail) {
+            if (showNav && !w.useRail && !WindowInsets.isImeVisible) {
                 BottomBar(route, nav, Modifier.align(Alignment.BottomCenter))
             }
         }
@@ -175,7 +182,10 @@ private fun NavHostController.goTab(route: String) {
 @Composable
 private fun BottomBar(route: String?, nav: NavHostController, modifier: Modifier) {
     val c = Svetlo.colors
-    Box(modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(12.dp), contentAlignment = Alignment.Center) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Box(modifier.fillMaxWidth()
+        .onSizeChanged { with(density) { measuredBar.value = it.height.toDp() } }
+        .windowInsetsPadding(WindowInsets.navigationBars).padding(12.dp), contentAlignment = Alignment.Center) {
         Row(
             Modifier
                 .widthIn(max = 520.dp)
