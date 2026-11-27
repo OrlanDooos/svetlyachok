@@ -735,12 +735,22 @@ private fun HouseAddressPicker(idx: ua.svetlo.monitor.data.AddressIndex, current
     val st = street
     if (st == null) {
         SearchField(q, { q = it }, tr("Почніть вводити назву вулиці", "Начните вводить название улицы"))
+        // «хлібна 47», «вул. Хлібна, 47» — сразу готовые адреса; «хлібна» — улицы.
+        val houses = remember(q) { if (q.any { it.isDigit() }) idx.search(q, limit = 6) else emptyList() }
         val found = remember(q) {
-            val k = q.trim().lowercase()
+            val k = q.lowercase().replace(Regex("\\d+\\s*[а-яіїєґa-z]?\\b"), " ")
+                .replace(Regex("^\\s*(вул\\.?|вулиця|пров\\.?|провулок|просп\\.?|проспект|бул\\.?|бульвар|пл\\.?|площа|ул\\.?|улица)\\s+"), "")
+                .replace(Regex("[,.]"), " ").trim().replace(Regex("\\s+"), " ")
             if (k.length < 2) emptyList() else idx.streetNames.filter { it.second.lowercase().contains(k) }.take(6)
         }
-        found.forEach { s ->
-            Text(s.second, style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { street = s }.padding(horizontal = 4.dp, vertical = 12.dp))
+        houses.forEach { a ->
+            Text(a, style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onPick(a) }.padding(horizontal = 4.dp, vertical = 12.dp))
+        }
+        found.filter { houses.isEmpty() || houses.none { a -> a.startsWith(it.second) } }.forEach { s ->
+            Text(s.second, style = Type.bodyBold, color = c.ink, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { street = s; q = "" }.padding(horizontal = 4.dp, vertical = 12.dp))
+        }
+        if (q.trim().length >= 2 && houses.isEmpty() && found.isEmpty()) {
+            Text(tr("Нічого не знайдено в переліку обленерго", "Ничего не найдено в списке облэнерго"), style = Type.small, color = c.ink2)
         }
         Text(tr("Вулиці — з переліку обленерго. Якщо вашої немає, будинок не входить у графіки для населення.", "Улицы — из списка облэнерго. Если вашей нет, дом не входит в графики для населения."), style = Type.caption, color = c.muted)
     } else {

@@ -13,8 +13,9 @@ import java.net.URLEncoder
  *
  * Условия Visicom (публичная оферта, п. 5.7) запрещают хранить их данные, кроме временного кеширования,
  * поэтому адреса не сохраняем ни в карту, ни на диск: только небольшой кеш в памяти на время работы приложения.
- * Адрес берём, только если ответ однозначный: ровно один адрес под точкой внутри дома
- * или ровно одна адресная точка внутри контура дома. Иначе считаем адрес неизвестным.
+ * Адрес берём, только если ответ однозначный: ровно один адрес под точкой внутри дома,
+ * ровно один адрес, пересекающий контур дома, или явно ближайшая адресная точка в пределах 12 м.
+ * Иначе считаем адрес неизвестным.
  */
 object Visicom {
     private val key: String get() = BuildConfig.VISICOM_KEY
@@ -39,12 +40,13 @@ object Visicom {
             runCatching {
                 // 1) Адрес, чья геометрия (контур дома у Visicom) содержит точку внутри нашего дома.
                 val byPoint = addresses(request("intersect", ck), polygonsOnly = true)
-                when {
-                    byPoint.size == 1 -> byPoint.first()
-                    byPoint.size > 1 -> null
-                    // 2) Адресная точка внутри нашего контура.
-                    else -> addresses(request("contains", wkt(ring)), polygonsOnly = false).singleOrNull()
-                }
+                if (byPoint.size == 1) return@runCatching byPoint.first()
+                if (byPoint.size > 1) return@runCatching null
+                // 2) Адреса, чья геометрия пересекает контур нашего дома (контуры OSM и Visicom чуть сдвинуты).
+                val byShape = addresses(request("intersect", wkt(ring)), polygonsOnly = false)
+                if (byShape.size == 1) return@runCatching byShape.first()
+                // 3) Ближайшая адресная точка: только если она рядом (≤ 12 м) и явно ближе остальных.
+                nearest(request("near", ck, "&r=25"))
             }
         }
         // Сетевые ошибки не кешируем: в следующий раз попробуем снова.
@@ -53,9 +55,9 @@ object Visicom {
         return value
     }
 
-    private fun request(param: String, geometry: String): String {
+    private fun request(param: String, geometry: String, extra: String = ""): String {
         val url = "https://api.visicom.ua/data-api/5.0/uk/geocode.json?categories=adr_address&$param=" +
-            URLEncoder.encode(geometry, "UTF-8") + "&limit=5&key=" + URLEncoder.encode(key, "UTF-8")
+            URLEncoder.encode(geometry, "UTF-8") + extra + "&limit=5&key=" + URLEncoder.encode(key, "UTF-8")
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 8000; c.readTimeout = 8000
         c.setRequestProperty("User-Agent", "Svetlyachok-Android")
@@ -72,6 +74,26 @@ object Visicom {
         val pts = ring.filterIndexed { i, _ -> i % step == 0 }.toMutableList()
         if (pts.first() != pts.last()) pts += pts.first()
         return pts.joinToString(",", "POLYGON((", "))") { (x, y) -> "%.7f %.7f".format(java.util.Locale.ROOT, x, y) }
+    }
+
+    /** Ближайший адрес из ответа near: ≤ 12 м и следующий другой адрес хотя бы вдвое дальше. Иначе null. */
+    fun nearest(json: String): String? {
+        val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
+        val fs = when (o.optString("type")) {
+            "Feature" -> listOf(o)
+            "FeatureCollection" -> o.optJSONArray("features")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: emptyList()
+            else -> emptyList()
+        }
+        val list = fs.mapNotNull { f ->
+            val a = addresses(f.toString(), polygonsOnly = false).singleOrNull() ?: return@mapNotNull null
+            val d = f.optJSONObject("properties")?.optDouble("dist_meters", Double.NaN) ?: Double.NaN
+            if (d.isNaN()) null else a to d
+        }.sortedBy { it.second }
+        val first = list.firstOrNull() ?: return null
+        val second = list.firstOrNull { it.first != first.first }
+        if (first.second > 12.0) return null
+        if (second != null && second.second < maxOf(2 * first.second, first.second + 6.0)) return null
+        return first.first
     }
 
     /**

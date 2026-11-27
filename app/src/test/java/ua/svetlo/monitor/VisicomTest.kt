@@ -82,4 +82,22 @@ class VisicomTest {
         val b = org.json.JSONObject(ua.svetlo.monitor.data.Pins.body("zaporizhia", "вул. Дальня, 14", 35.2034281, 47.8131623, "id"))
         assertEquals(35.203428, b.getDouble("lon"), 1e-9); assertEquals("вул. Дальня, 14", b.getString("address"))
     }
+
+    private fun near(name: String, d: Double) =
+        """{"type":"Feature","properties":{"name":"$name","categories":"adr_address","street":"Хлібна","street_type":"вул.","dist_meters":$d}}"""
+
+    @Test fun nearestOnlyWhenClear() {
+        fun col(vararg f: String) = """{"type":"FeatureCollection","features":[${f.joinToString(",")}]}"""
+        assertEquals("вул. Хлібна, 49", Visicom.nearest(col(near("49", 2.0), near("47", 12.0))))
+        assertEquals(null, Visicom.nearest(col(near("49", 5.0), near("47", 8.0))))   // почти одинаково близко
+        assertEquals(null, Visicom.nearest(col(near("49", 15.0))))                    // слишком далеко
+        assertEquals("вул. Хлібна, 47", Visicom.nearest(near("47", 3.0)))
+        assertEquals(null, Visicom.nearest("{}"))
+    }
+
+    @Test fun searchStreetWithNumber() {
+        val idx = AddressIndex("ZOE", "", mapOf("хлібна" to mapOf("47" to "6.2", "47а" to "6.2", "49" to "6.2")), emptyMap(), listOf("хлібна" to "вул. Хлібна"))
+        assertEquals("вул. Хлібна, 47", idx.search("хлібна 47").first())
+        assertEquals("вул. Хлібна, 47", idx.search("Вул. Хлібна, 47").first())
+    }
 }
