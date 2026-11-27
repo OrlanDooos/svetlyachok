@@ -3,7 +3,7 @@ usage: gen_city_bin.py tiles_dir out.bin meta.json
 Формат (big-endian, DataInputStream):
   'SVC2' | int metaLen | meta(utf8 json)
   int nStr | (ushort len, utf8)*      — таблица строк (адреса и названия улиц)
-  int nB  | per building: int strIdx(-1), byte flags (1 — критическая инфраструктура, 2 — номер оценён интерполяцией, 4 — адрес отметили жители), ushort n, int x0, int y0 (дм), (short dx, short dy)*(n-1)
+  int nB  | per building: int strIdx(-1), byte flags (1 — критическая инфраструктура, 2 — номер оценён интерполяцией, 4 — адрес отметили жители, 8 — адрес из Visicom), ushort n, int x0, int y0 (дм), (short dx, short dy)*(n-1)
   int nL  | per line: byte kind, int strIdx, ushort n, int x0, int y0, (short dx, short dy)*(n-1)
 """
 import json, sys, glob, math, struct, os
@@ -132,6 +132,15 @@ for e in B.values():
         addr = addr_inside(g)
         if addr: from_points += 1
     blds.append((S(addr), 1 if (t.get('building') in crit or t.get('amenity') in crit) else 0, pts, e))
+# Адреса из Visicom (© Візіком; collector/maps/visicom_fill.py) — только для домов без адреса в OSM. Флаг 8.
+visicom = 0
+vf = os.path.join(tiles, 'visicom.json')
+if os.path.exists(vf):
+    vc = json.load(open(vf))
+    for i, (si, fl, pts, e) in enumerate(blds):
+        a = vc.get(str(e['id']))
+        if si < 0 and a:
+            blds[i] = (S(a), fl | 8, pts, e); visicom += 1
 # Отметки жителей (подтверждённые 2+ установками): адрес дома, в котором стоит точка.
 # Пустой адрес заполняем всегда, адрес из OSM меняем, только если отметок 3 и больше.
 crowd = 0
@@ -187,6 +196,23 @@ if os.path.exists(zf):
     for i, (street, n) in interp.items():
         si, fl, pts, e = blds[i]
         blds[i] = (S(fix_addr(street) + ', ' + n), fl | 2, pts, e)
+# Очередь для своей базы адресов (сервер спрашивает Visicom, server/pins/src/visicom.js), если задан QUEUE_OUT.
+# prio 0 — без адреса и без оценки по соседям (их первыми), 1 — номер только оценён, 2 — гаражи, сараи и мелочь.
+NONRES = {'garage', 'garages', 'shed', 'industrial', 'warehouse', 'commercial', 'retail', 'service', 'roof', 'hut',
+          'kiosk', 'greenhouse', 'barn', 'transformer_tower', 'construction', 'ruins', 'carport', 'storage_tank'}
+if os.environ.get('QUEUE_OUT'):
+    queue = []
+    for si, fl, pts, e in blds:
+        if si >= 0 and not fl & 2: continue
+        g = e['geometry'][:-1] if e['geometry'][0] == e['geometry'][-1] else e['geometry']
+        if len(g) < 3: continue
+        m = [((p['lon'] - lon0) * kx, (p['lat'] - lat0) * ky) for p in g]
+        area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(m, m[1:] + m[:1]))) / 2
+        small = area < 40 or e.get('tags', {}).get('building') in NONRES
+        queue.append({'way': e['id'], 'prio': 2 if small else (1 if fl & 2 else 0),
+                      'ring': [[round(p['lon'], 7), round(p['lat'], 7)] for p in g]})
+    json.dump(queue, open(os.environ['QUEUE_OUT'], 'w'), separators=(',', ':'))
+    print(len(queue), 'in address queue:', {k: sum(1 for q in queue if q['prio'] == k) for k in (0, 1, 2)})
 blds = [(si, fl, pts) for si, fl, pts, e in blds]
 lines = []
 KIND = {'trunk':0,'primary':0,'secondary':1,'tertiary':2,'residential':3,'unclassified':3,'living_street':3,'pedestrian':4,'park':5,'water':6}
@@ -215,4 +241,4 @@ with open(out, 'wb') as f:
     f.write(struct.pack('>i', len(lines)))
     for k, si, pts in lines:
         f.write(struct.pack('>bi', k, si)); pts_out(pts)
-print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(interp), 'interpolated;', crowd, 'from residents;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')
+print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(interp), 'interpolated;', crowd, 'from residents;', visicom, 'from Visicom;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')

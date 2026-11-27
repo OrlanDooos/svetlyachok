@@ -14,7 +14,9 @@ database_id = "cd6ca06d-5fac-477e-8155-71ae29500cbd"
 # Личный Telegram-бот (telegram.js): проверка тревог сторожа и свежести данных.
 # Секреты задаются отдельно и в репозиторий не попадают: TG_BOT_TOKEN, TG_CLAIM, ADMIN_KEY.
 [triggers]
-crons = ["*/10 * * * *"]
+# */10 — бот; */2 — заполнение адресов из Visicom (visicom.js, в пределах VISICOM_DAILY).
+crons = ["*/10 * * * *", "*/2 * * * *"]
 
 [vars]
 PUBLIC_URL = "https://svetlyachok-pins.svetlyachok.workers.dev"
+VISICOM_DAILY = "1400"
