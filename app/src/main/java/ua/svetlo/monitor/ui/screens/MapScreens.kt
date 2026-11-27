@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -558,14 +559,17 @@ fun CityMapScreen(
 
         // Нижняя шторка на телефоне.
         if (!w.twoPane) {
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            // imePadding: шторка поднимается над клавиатурой (окно edge-to-edge, само оно не сжимается).
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()) {
                 MapLegend(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).align(Alignment.CenterHorizontally))
                 AnimatedVisibility(picked != null || pending != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                     Column(
                         Modifier.fillMaxWidth().widthIn(max = 640.dp)
+                            .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.75f).dp)
                             .shadow(24.dp, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                             .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(c.surface)
-                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = if (w.useRail) 20.dp else BottomBarSpace),
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = if (w.useRail) 20.dp else BottomBarSpace + 12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(5.dp).clip(CircleShape).background(c.line))

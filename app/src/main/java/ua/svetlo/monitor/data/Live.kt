@@ -252,7 +252,9 @@ class LiveRepository(val store: ScheduleStore) : OutageRepository {
         val sum = summary(region)
         val data = store.region(region)
         val mode = data?.mode ?: sum?.mode ?: RegionMode.Unknown
-        val updated = data?.checkedAt ?: sum?.checkedAt
+        // Время последней проверки берём из списка областей: он скачивается при каждом обновлении,
+        // а файл области — только когда график изменился (его checkedAt может быть старым).
+        val updated = listOfNotNull(sum?.checkedAt, data?.checkedAt).maxOrNull()
         // Аварийные: график показываем как обычно (у многих свет всё равно идёт по нему), но с пометкой
         // «графік може не діяти». Без графика или при блэкауте — только режим.
         val emergency = mode == RegionMode.Emergency
