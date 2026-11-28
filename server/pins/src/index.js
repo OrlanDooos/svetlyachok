@@ -69,6 +69,7 @@ const OIDC_AUD = "svetlyachok-data";
 const DATA_PATH = /^\/data\/v1\/([a-z0-9-]+\.json)$/;
 const MAPS_PATH = /^\/maps\/v1\/([a-z0-9-]+\.(?:json|bin))$/;
 const ADDR_PATH = /^\/addr\/v1\/([a-z0-9-]+)(\.json|\/queue)$/;
+const STALE_SEC = 10 * 60;      // regions.json старше — сборщик не пишет, отдаём 503
 const CHUNK = 900_000;           // D1: строка не больше ~1 МБ, большие файлы режем на части
 const MAX_MAP = 20_000_000;
 let jwks = null, jwksAt = 0;
@@ -124,6 +125,9 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type" } });
     const dm = url.pathname.match(DATA_PATH);
     if (dm && req.method === "GET") {
+      // Сборщик не смог записать (лимит D1, сбой)? Тогда не отдаём старое: приложение возьмёт GitHub Pages.
+      const fresh = await env.DB.prepare("SELECT updated FROM files WHERE path='regions.json'").first();
+      if (!fresh || Date.now() / 1000 - fresh.updated > STALE_SEC) return json({ error: "stale" }, 503);
       const row = await env.DB.prepare("SELECT body FROM files WHERE path=?1").bind(dm[1]).first();
       if (!row) return json({ error: "not found" }, 404);
       return new Response(row.body, { headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=20" } });
