@@ -24,7 +24,7 @@ ROADS = 'way[highway~"^(primary|secondary|tertiary|residential|trunk|unclassifie
 
 def overpass(query):
     last = None
-    for attempt in range(6):
+    for attempt in range(10):  # Overpass по ночам часто 502/504 — пробуем дольше
         url = SERVERS[attempt % len(SERVERS)]
         try:
             data = urllib.parse.urlencode({"data": f"[out:json][timeout:180];{query}"}).encode()
@@ -88,7 +88,8 @@ def build(cid, rel, bbox, n, out_dir):
 
 
 def server_token():
-    """OIDC-токен GitHub Actions (aud svetlyachok-data) или ADMIN_KEY; None — сервера нет, вторую карту не собираем."""
+    """OIDC-токен GitHub Actions (aud svetlyachok-data) или ADMIN_KEY; None — сервера нет, вторую карту не собираем.
+    Токен GitHub живёт ~5 минут, а сборка идёт полчаса, поэтому берём его заново перед каждым запросом."""
     url, tok = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"), os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
     if url and tok:
         req = urllib.request.Request(f"{url}&audience=svetlyachok-data", headers={"Authorization": f"Bearer {tok}"})
@@ -101,6 +102,7 @@ def server(method, path, token, body=None, ctype="application/json"):
     req = urllib.request.Request(os.environ.get("PINS_URL", "https://svetlyachok-pins.svetlyachok.workers.dev").rstrip("/") + path,
                                  data=body, method=method, headers={"Authorization": f"Bearer {token}", "Content-Type": ctype,
                                                                     "User-Agent": "svetlyachok-maps"})  # Python-urllib Cloudflare режет (1010)
+    req.add_header("Authorization", f"Bearer {server_token() or token}")
     with urllib.request.urlopen(req, timeout=120) as r:
         return r.read()
 

@@ -145,6 +145,24 @@ if os.path.exists(vf):
         a = vc.get(str(e['id']))
         if si < 0 and a:
             blds[i] = (S(a), fl | 8, pts, e); visicom += 1
+# Улицы, записанные в OSM/Visicom иначе, чем в списках облэнерго («Лахтинська» / «Лахтінська»): берём название
+# из списков, если это подтверждают номера домов (collector/maps/street_match.py). Иначе дом не найдётся в списках.
+renamed = 0
+zf0 = os.path.join(tiles, 'zoe.json')
+if os.path.exists(zf0):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from street_match import renames
+    z0 = json.load(open(zf0))
+    zs0 = {k: {h for hs in v['q'].values() for h in hs.split('|')} for k, v in z0.get('streets', {}).items()}
+    R = renames([strings[si] for si, fl, pts, e in blds if si >= 0], zs0, z0.get('aliases', {}),
+                {k: v.get('n', k) for k, v in z0.get('streets', {}).items()})
+    for i, (si, fl, pts, e) in enumerate(blds):
+        if si < 0: continue
+        st, _, hn = strings[si].rpartition(',')
+        k = R.get(st.strip())
+        if k:
+            blds[i] = (S(z0['streets'][k].get('n', k) + ',' + hn), fl, pts, e); renamed += 1
+    print(len(R), 'streets renamed to oblenergo names,', renamed, 'buildings')
 # Отметки жителей (подтверждённые 2+ установками): адрес дома, в котором стоит точка.
 # Пустой адрес заполняем всегда, адрес из OSM меняем, только если отметок 3 и больше.
 crowd = 0

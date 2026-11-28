@@ -4,13 +4,23 @@
 Вход — OIDC-токен GitHub Actions (нужно permissions: id-token: write), секреты не нужны.
 Использование: python3 collector/upload.py <папка с v1/>
 """
+import hashlib
 import json
 import os
+import re
 import sys
+import time
 import urllib.request
 
 BASE = os.environ.get("DATA_URL", "https://svetlyachok-pins.svetlyachok.workers.dev")
 AUD = "svetlyachok-data"
+# Бесплатный D1 — 100 тыс. записей в сутки. Файл области грузим, только если в нём что-то поменялось
+# (кроме времени проверки) или прошло 15 минут; regions.json — каждый раз, по нему приложение видит свежесть.
+RESEND_SEC = 15 * 60
+
+
+def content_hash(body):
+    return hashlib.sha1(re.sub(rb'"checkedAt":\s*"[^"]*"', b"", body)).hexdigest()
 
 
 def oidc_token():
@@ -31,16 +41,28 @@ def main():
     idx = json.load(open(os.path.join(root, "regions.json")))
     # Сначала файлы областей, потом список: приложение не увидит новый hash раньше самого файла.
     names = [f"{r['id']}.json" for r in idx["regions"] if os.path.exists(os.path.join(root, f"{r['id']}.json"))] + ["regions.json"]
+    state_path = os.path.join(root, "..", ".uploaded.json")
+    try:
+        state = json.load(open(state_path))
+    except Exception:
+        state = {}
+    now = time.time()
     for name in names:
         body = open(os.path.join(root, name), "rb").read()
+        h = content_hash(body)
+        prev = state.get(name) or {}
+        if name != "regions.json" and prev.get("h") == h and now - prev.get("t", 0) < RESEND_SEC:
+            continue
         req = urllib.request.Request(f"{BASE}/data/v1/{name}", data=body, method="PUT",
                                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
                                               # Cloudflare отклоняет стандартный User-Agent Python-urllib (ошибка 1010).
                                               "User-Agent": "svetlyachok-collector"})
         try:
             urllib.request.urlopen(req, timeout=20).read()
+            state[name] = {"h": h, "t": now}
         except Exception as e:
             print(f"upload {name}: {e}")
+    json.dump(state, open(state_path, "w"))
 
 
 if __name__ == "__main__":
