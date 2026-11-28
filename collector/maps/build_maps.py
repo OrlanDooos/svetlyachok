@@ -24,7 +24,7 @@ ROADS = 'way[highway~"^(primary|secondary|tertiary|residential|trunk|unclassifie
 
 def overpass(query):
     last = None
-    for attempt in range(6):
+    for attempt in range(10):  # Overpass по ночам часто 502/504 — пробуем дольше
         url = SERVERS[attempt % len(SERVERS)]
         try:
             data = urllib.parse.urlencode({"data": f"[out:json][timeout:180];{query}"}).encode()
