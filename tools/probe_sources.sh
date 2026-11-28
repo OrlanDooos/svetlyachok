@@ -19,6 +19,9 @@ kharkiv https://www.oblenergo.kharkov.ua/
 poltava https://www.poe.pl.ua/
 vinnytsia https://www.voe.com.ua/
 cherkasy https://www.cherkasyoblenergo.com/
+mykolaiv-api https://off.energy.mk.ua/api/v2/schedule/active
+zt-gpv https://www.ztoe.com.ua/unhooking-search.php
+telegram https://t.me/s/Ukrenergo
 sumy https://www.sumyoblenergo.com.ua/
 mykolaiv https://www.energy.mk.ua/
 ternopil https://www.toe.com.ua/
@@ -35,3 +38,9 @@ volyn https://www.energy.volyn.ua/
 kirovohrad https://kiroe.com.ua/
 ukrenergo https://www.ukrenergo.energy/
 LIST
+
+# Пробный сбор новых областей с этой машины (GitHub Actions) — без публикации.
+echo; echo "=== пробный сбор"
+export OUT_DIR=$(mktemp -d); ONLY=zaporizhia,ivano-frankivsk,ternopil,sumy,chernihiv,chernivtsi,volyn,zakarpattia,vinnytsia,poltava,kherson,donetsk \
+  python3 -c "import sys; sys.path.insert(0, 'collector'); import addresses; addresses.update = lambda *a, **k: None; import collect; collect.main()" &&
+  python3 -c "import json,glob; [print(f.split('/')[-1], {d: v.get('1.1') or v.get('1') for d, v in json.load(open(f))['days'].items()}) for f in sorted(glob.glob('$OUT_DIR/v1/*.json')) if 'regions' not in f]"

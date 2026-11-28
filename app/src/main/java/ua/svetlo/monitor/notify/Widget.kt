@@ -45,6 +45,8 @@ class Widget : AppWidgetProvider() {
                         st.type == OutageType.Emergency && st.lightOn == true -> R.drawable.widget_bg_red to tr("За графіком світло є", "По графику свет есть")
                         st.type == OutageType.Emergency && st.lightOn == false -> R.drawable.widget_bg_red to tr("За графіком світла немає", "По графику света нет")
                         st.type == OutageType.Emergency -> R.drawable.widget_bg_red to tr("Аварійні відключення", "Аварийные отключения")
+                        st.regionOnly && st.type == OutageType.Stabilization -> R.drawable.widget_bg_yellow to ua.svetlo.monitor.ui.screens.regionOnlyTitle(st)
+                        st.regionOnly && st.type == OutageType.None -> R.drawable.widget_bg_green to ua.svetlo.monitor.ui.screens.regionOnlyTitle(st)
                         st.lightOn == null -> R.drawable.widget_bg_grey to tr("Немає графіка", "Нет графика")
                         st.lightOn -> R.drawable.widget_bg_green to tr("Світло є", "Свет есть")
                         else -> R.drawable.widget_bg_yellow to tr("Світла немає", "Света нет")

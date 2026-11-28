@@ -1,5 +1,6 @@
 name: Build maps
-# Каждый день пересобираем карты домов из OpenStreetMap и кладём их в ветку maps.
+# Каждый день пересобираем карты домов из OpenStreetMap и кладём их в ветку maps (только OSM),
+# а карту с адресами из своей базы (© Візіком) — только на свой сервер, не в git.
 # Сборщик графиков (collect.yml) копирует их в ветку data, откуда их скачивает приложение.
 on:
   schedule:
@@ -7,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  id-token: write   # вход на свой сервер: карта с адресами из своей базы и очередь адресов
 concurrency:
   group: maps
   cancel-in-progress: false

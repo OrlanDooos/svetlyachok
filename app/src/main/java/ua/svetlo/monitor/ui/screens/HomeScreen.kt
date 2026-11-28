@@ -95,6 +95,7 @@ fun HomeScreen(
     onAddresses: () -> Unit,
     onSchedule: () -> Unit,
     onArea: () -> Unit,
+    onDetail: () -> Unit = onSchedule,
     onSources: () -> Unit,
     onNotif: () -> Unit,
     onSelect: (String) -> Unit,
@@ -107,7 +108,7 @@ fun HomeScreen(
     val tomorrow = repo.schedule(addr.region, addr.queue, now.toLocalDate().plusDays(1))
     val supported = repo.summary(addr.region) != null
     if (LocalLargeText.current) {
-        LargeHome(s, state, now, onAddresses, onSchedule)
+        LargeHome(s, state, now, onAddresses, onSchedule, onDetail)
         return
     }
     val w = LocalWindow.current
@@ -118,8 +119,8 @@ fun HomeScreen(
     }
     val status: @Composable () -> Unit = { StatusCard(state, now, supported, s.selected.queue) }
     val todayCard: @Composable () -> Unit = {
-        SCard {
-            SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Завтра", "Завтра"), onSchedule)
+        SCard(onClick = onDetail) {
+            SectionHeader(tr("Сьогодні за графіком", "Сегодня по графику"), tr("Детально", "Подробно"), onDetail)
             val frac = (now.hour * 60 + now.minute) / 1440f
             if (state.schedulesSuspended) {
                 Text(tr("Діють аварійні відключення: графік може не діяти, світло можуть вимкнути й поза ним.", "Действуют аварийные отключения: график может не действовать, свет могут выключить и вне его."), style = Type.small, color = Svetlo.colors.redInk)
@@ -243,11 +244,14 @@ private fun StatusCard(state: NowState, now: LocalDateTime, supported: Boolean, 
     val (color, soft) = when {
         state.type == OutageType.Blackout -> Status.Black to c.blackSoft
         state.type == OutageType.Emergency -> Status.Red to c.redSoft
+        state.regionOnly && state.type == OutageType.Stabilization -> Status.Yellow to c.yellowSoft
+        state.regionOnly && state.type == OutageType.None -> Status.Green to c.greenSoft
         state.lightOn == null -> Status.NoData to c.track
         state.lightOn -> Status.Green to c.greenSoft
         else -> Status.Yellow to c.yellowSoft
     }
     val title = when {
+        state.regionOnly -> regionOnlyTitle(state)
         state.type == OutageType.Blackout -> tr("Блекаут", "Блэкаут")
         state.type == OutageType.Emergency && state.lightOn == true -> tr("За графіком світло є", "По графику свет есть")
         state.type == OutageType.Emergency && state.lightOn == false -> tr("За графіком світла немає", "По графику света нет")
@@ -265,6 +269,7 @@ private fun StatusCard(state: NowState, now: LocalDateTime, supported: Boolean, 
             when {
                 state.schedulesSuspended && state.lightOn != null -> { ScheduledBlock(state, now); EmergencyNote() }
                 state.schedulesSuspended -> EmergencyBlock(state, color)
+                state.regionOnly -> Text(regionOnlyNote(state), style = Type.body, color = c.ink2, textAlign = TextAlign.Center)
                 state.lightOn == null -> Text(
                     if (!supported) tr("Для цієї області ми ще не збираємо графіки. Щойно джерело запрацює, статус з'явиться тут.", "Для этой области мы ещё не собираем графики. Как только источник заработает, статус появится здесь.")
                     else tr("Оператор ще не опублікував графік для черги $queue на сьогодні.", "Оператор ещё не опубликовал график для очереди $queue на сегодня."),
@@ -272,6 +277,7 @@ private fun StatusCard(state: NowState, now: LocalDateTime, supported: Boolean, 
                 state.type == OutageType.None -> Text(tr("Відключень за графіком немає", "Отключений по графику нет"), style = Type.body, color = c.ink2)
                 else -> ScheduledBlock(state, now)
             }
+            state.sourceNote?.let { Text(it, style = Type.caption, color = c.muted, textAlign = TextAlign.Center) }
         }
     }
 }
@@ -308,12 +314,14 @@ private fun EmergencyBlock(state: NowState, color: Color) {
 
 /** Упрощённая главная для режима крупного шрифта: контрастно, только главное. */
 @Composable
-private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddresses: () -> Unit, onSchedule: () -> Unit) {
+private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddresses: () -> Unit, onSchedule: () -> Unit, onDetail: () -> Unit) {
     val c = Svetlo.colors
     val w = LocalWindow.current
     val bg = when {
         state.type == OutageType.Blackout -> Status.Black
         state.type == OutageType.Emergency -> Color(0xFFB91C1F)
+        state.regionOnly && state.type == OutageType.Stabilization -> Color(0xFF8A6A00)
+        state.regionOnly && state.type == OutageType.None -> Color(0xFF1E8E57)
         state.lightOn == null -> Color(0xFF4A4E57)
         state.lightOn -> Color(0xFF1E8E57)
         else -> Color(0xFF8A6A00)
@@ -335,6 +343,7 @@ private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddres
             val line1 = when {
                 state.schedulesSuspended && state.lightOn != null -> (if (state.lightOn == true) tr("Вимкнуть о ${state.nextChange?.hm()}", "Выключат в ${state.nextChange?.hm()}") else tr("Увімкнуть о ${state.nextChange?.hm()}", "Включат в ${state.nextChange?.hm()}")) + tr(" за графіком · аварійні, графік може не діяти", " по графику · аварийные, график может не действовать")
                 state.schedulesSuspended -> if (state.type == OutageType.Blackout) tr("Блекаут", "Блэкаут") else tr("Аварійні відключення", "Аварийные отключения")
+                state.regionOnly -> regionOnlyTitle(state)
                 state.lightOn == null -> tr("Графіка ще немає", "Графика ещё нет")
                 state.type == OutageType.None -> tr("Відключень немає", "Отключений нет")
                 state.lightOn == true -> tr("Вимкнуть о ${state.nextChange?.hm()}", "Выключат в ${state.nextChange?.hm()}")
@@ -352,7 +361,25 @@ private fun LargeHome(s: Settings, state: NowState, now: LocalDateTime, onAddres
                 Text(tr("Увімкнуть о ${b.hm()}", "Включат в ${b.hm()}"), style = Type.bodyBold.copy(fontSize = 18.sp), color = c.ink2)
             }
         }
-        PrimaryButton(tr("Графік на тиждень", "График на неделю"), onSchedule, Modifier.fillMaxWidth().heightIn(min = 72.dp), outlined = true)
+        PrimaryButton(tr("Графік по годинах", "График по часам"), onDetail, Modifier.fillMaxWidth().heightIn(min = 72.dp), outlined = true)
+        PrimaryButton(tr("Графік на завтра", "График на завтра"), onSchedule, Modifier.fillMaxWidth().heightIn(min = 72.dp), outlined = true)
     }
 }
 
+
+/** Заголовок для области, где известен только режим (график по очередям оператор публикует картинкой). */
+fun regionOnlyTitle(state: NowState): String = when (state.type) {
+    OutageType.Stabilization -> tr("Діють графіки відключень", "Действуют графики отключений")
+    OutageType.None -> tr("Відключень не заплановано", "Отключений не запланировано")
+    else -> tr("Немає даних", "Нет данных")
+}
+
+fun regionOnlyNote(state: NowState): String {
+    val op = state.operator ?: tr("обленерго", "облэнерго")
+    return when (state.type) {
+        OutageType.Stabilization -> tr("У вашій області застосовуються графіки погодинних відключень. Години для вашої черги $op публікує лише картинкою — подивіться їх на сайті чи в каналі оператора.",
+            "В вашей области применяются графики почасовых отключений. Часы для вашей очереди $op публикует только картинкой — посмотрите их на сайте или в канале оператора.")
+        OutageType.None -> tr("$op не повідомляв про відключення на сьогодні.", "$op не сообщал об отключениях на сегодня.")
+        else -> tr("$op ще не повідомив, чи діють сьогодні графіки.", "$op ещё не сообщил, действуют ли сегодня графики.")
+    }
+}

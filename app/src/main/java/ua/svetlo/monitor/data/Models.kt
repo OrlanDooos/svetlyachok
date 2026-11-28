@@ -79,6 +79,10 @@ data class NowState(
     val attention: String? = null,
     val updatedAt: java.time.OffsetDateTime? = null,
     val operator: String? = null,
+    /** Оператор публикует только режим области (график по очередям — картинкой): статус без часов. */
+    val regionOnly: Boolean = false,
+    /** График не от облэнерго (фан-канал, агрегатор) — показываем пометку. */
+    val sourceNote: String? = null,
 )
 
 data class RegionStatus(
@@ -162,6 +166,12 @@ data class CityMap(
     fun toLonLat(x: Float, y: Float): Pair<Double, Double> {
         val kx = 111320.0 * kotlin.math.cos(Math.toRadians(originLat))
         return (originLon + x / kx) to (originLat - y / 110540.0)
+    }
+
+    /** (долгота, широта) → метры карты, как dm() в gen_city_bin.py (только в метрах). */
+    fun fromLonLat(lon: Double, lat: Double): Pair<Float, Float> {
+        val kx = 111320.0 * kotlin.math.cos(Math.toRadians(originLat))
+        return ((lon - originLon) * kx).toFloat() to ((originLat - lat) * 110540.0).toFloat()
     }
 
     fun ringLonLat(b: Building): List<Pair<Double, Double>> = (0 until b.points.size / 2).map { toLonLat(b.points[2 * it], b.points[2 * it + 1]) }

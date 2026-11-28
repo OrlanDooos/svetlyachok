@@ -44,7 +44,9 @@ def problems(root, now):
                 out[f"broken:{rid}"] = (f"{name}: источник не отвечает",
                                         f"Ошибка: {r.get('error')}\nПоследний удачный сбор: {since or 'никогда'}.")
         # После 01:00 график на сегодня уже должен быть (его публикуют накануне вечером).
-        if now.hour >= 1 and today not in (body.get("days") or {}):
+        # Области, где облэнерго публикует только режим (график картинкой), и дни без ГПВ — не ошибка.
+        if now.hour >= 1 and today not in (body.get("days") or {}) and body.get("queueSchedules", True) \
+                and body.get("mode") not in ("none", "emergency", "blackout"):
             out[f"today:{rid}"] = (f"{name}: нет графика на {today}",
                                    f"В приложении у этой области «нет графика». Источник: {body.get('source')}.\n"
                                    f"Есть дни: {', '.join(sorted(body.get('days') or {})) or 'нет'}.")

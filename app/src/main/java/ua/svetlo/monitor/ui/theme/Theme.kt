@@ -75,7 +75,7 @@ val LightColors = SvetloColors(
     yellowSoft = Color(0xFFFDF0C2), yellowInk = Color(0xFF6B4E00),
     redSoft = Color(0xFFFCE1E1), redInk = Color(0xFFA3181B),
     blackSoft = Color(0xFFE4E3E0),
-    mapBg = Color(0xFFEEECE6), mapRoad = Color(0xFFFFFFFF), mapPark = Color(0xFFDCEBD5), mapWater = Color(0xFFCFE0EE),
+    mapBg = Color(0xFFEEECE6), mapRoad = Color(0xFFFFFFFF), mapPark = Color(0xFFDCEBD5), mapWater = Color(0xFFC3DAEF),
     // Выделение выбранного: мягкий нейтрально-индиговый вместо чёрного.
     inverse = Color(0xFFE4E2F8), onInverse = Color(0xFF2E2899),
 )
@@ -90,7 +90,7 @@ val DarkColors = SvetloColors(
     yellowSoft = Color(0xFF3A3010), yellowInk = Color(0xFFFFD866),
     redSoft = Color(0xFF3A1416), redInk = Color(0xFFFFB3B4),
     blackSoft = Color(0xFF2A2D35),
-    mapBg = Color(0xFF15171C), mapRoad = Color(0xFF2A2D35), mapPark = Color(0xFF16251B), mapWater = Color(0xFF14212E),
+    mapBg = Color(0xFF15171C), mapRoad = Color(0xFF2A2D35), mapPark = Color(0xFF16251B), mapWater = Color(0xFF1A3046),
     inverse = Color(0xFF363A4A), onInverse = Color(0xFFF2F2F4),
 )
 

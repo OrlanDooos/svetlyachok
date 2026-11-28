@@ -119,6 +119,24 @@ val LookupUrls = mapOf(
     "odessa" to "https://www.dtek-oem.com.ua/ua/shutdowns",
     "lviv" to "https://poweron.loe.lviv.ua/",
     "zaporizhia" to "https://www.zoe.com.ua/",
+    "zhytomyr" to "https://www.ztoe.com.ua/unhooking-search.php",
+    "mykolaiv" to "https://off.energy.mk.ua/",
+    "kirovohrad" to "https://kiroe.com.ua/energy/plan",
+    "rivne" to "https://www.roe.vsei.ua/disconnections",
+    "khmelnytskyi" to "https://hoe.com.ua/page/pogodinni-vidkljuchennja",
+    "cherkasy" to "https://www.cherkasyoblenergo.com/",
+    "kharkiv" to "https://oblenergo.kharkiv.ua/",
+    "ivano-frankivsk" to "https://www.oe.if.ua/",
+    "ternopil" to "https://www.toe.com.ua/",
+    "sumy" to "https://www.soe.com.ua/consumers/shutdowns",
+    "chernihiv" to "https://www.energy.cn.ua/",
+    "chernivtsi" to "https://oblenergo.cv.ua/shutdowns/",
+    "volyn" to "https://energy.volyn.ua/",
+    "zakarpattia" to "https://zakarpat.energy/",
+    "vinnytsia" to "https://www.voe.com.ua/",
+    "poltava" to "https://www.poe.pl.ua/disconnection/power-outages/",
+    "kherson" to "https://www.ksoe.com.ua/",
+    "donetsk" to "https://www.dtek-dem.com.ua/ua/shutdowns",
 )
 
 /** «5 хв тому» для времени обновления. */
@@ -168,8 +186,8 @@ fun MoreScreen(s: Settings, nav: (String) -> Unit, update: ((Settings) -> Settin
     }
     val about: @Composable () -> Unit = {
         Text(
-            tr("Світлячок ${BuildConfig.VERSION_NAME}. Відкритий код: github.com/OrlanDooos/svetlyachok. Графіки — з сайтів і каналів обленерго; для ДТЕК резервне джерело — outage-data-ua (MIT). Мапа областей: @svg-maps/ukraine (CC BY 4.0). Контури будинків: © учасники OpenStreetMap (ODbL). Адреси будинків, яких немає в OpenStreetMap: © АТ «Візіком» (за запитом, не зберігаються). Шрифти Onest і Manrope (OFL).",
-                "Светлячок ${BuildConfig.VERSION_NAME}. Открытый код: github.com/OrlanDooos/svetlyachok. Графики — с сайтов и каналов облэнерго; для ДТЭК запасной источник — outage-data-ua (MIT). Карта областей: @svg-maps/ukraine (CC BY 4.0). Контуры домов: © участники OpenStreetMap (ODbL). Адреса домов, которых нет в OpenStreetMap: © АО «Визиком» (по запросу, не сохраняются). Шрифты Onest и Manrope (OFL)."),
+            tr("Світлячок ${BuildConfig.VERSION_NAME}. Відкритий код: github.com/OrlanDooos/svetlyachok. Графіки — з сайтів і каналів обленерго; для ДТЕК резервне джерело — outage-data-ua (MIT). Мапа областей: @svg-maps/ukraine (CC BY 4.0). Контури будинків: © учасники OpenStreetMap (ODbL). Адреси будинків, яких немає в OpenStreetMap: © АТ «Візіком» (Visicom), з дозволу компанії. Шрифти Onest і Manrope (OFL).",
+                "Светлячок ${BuildConfig.VERSION_NAME}. Открытый код: github.com/OrlanDooos/svetlyachok. Графики — с сайтов и каналов облэнерго; для ДТЭК запасной источник — outage-data-ua (MIT). Карта областей: @svg-maps/ukraine (CC BY 4.0). Контуры домов: © участники OpenStreetMap (ODbL). Адреса домов, которых нет в OpenStreetMap: © АО «Визиком» (Visicom), с разрешения компании. Шрифты Onest и Manrope (OFL)."),
             style = Type.caption.copy(fontWeight = FontWeight.Medium), color = c.muted,
         )
     }
@@ -379,6 +397,7 @@ fun SourcesScreen(repo: OutageRepository, onBack: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(r.name, style = Type.bodyBold, color = c.ink)
                         Text(listOfNotNull(sm?.operator, r.type.title).joinToString(" · "), style = Type.small, color = c.muted)
+                        rd?.sourceNote?.let { Text(it, style = Type.caption, color = c.muted) }
                     }
                     Text(if (sm?.ok == false) tr("помилка", "ошибка") else ago(sm?.checkedAt), style = Type.caption, color = if (sm?.ok == false) c.redInk else c.muted)
                 }

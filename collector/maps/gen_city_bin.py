@@ -3,7 +3,7 @@ usage: gen_city_bin.py tiles_dir out.bin meta.json
 Формат (big-endian, DataInputStream):
   'SVC2' | int metaLen | meta(utf8 json)
   int nStr | (ushort len, utf8)*      — таблица строк (адреса и названия улиц)
-  int nB  | per building: int strIdx(-1), byte flags (1 — критическая инфраструктура, 2 — номер оценён интерполяцией, 4 — адрес отметили жители), ushort n, int x0, int y0 (дм), (short dx, short dy)*(n-1)
+  int nB  | per building: int strIdx(-1), byte flags (1 — критическая инфраструктура, 2 — номер оценён интерполяцией, 4 — адрес отметили жители, 8 — адрес из Visicom), ushort n, int x0, int y0 (дм), (short dx, short dy)*(n-1)
   int nL  | per line: byte kind, int strIdx, ushort n, int x0, int y0, (short dx, short dy)*(n-1)
 """
 import json, sys, glob, math, struct, os
@@ -20,21 +20,25 @@ for f in glob.glob(os.path.join(tiles, 'r_*.json')):
         if e['type'] == 'way' and 'geometry' in e: L[e['id']] = e
 # Граница города: собираем внешние кольца из путей отношения.
 bd = json.load(open(os.path.join(tiles, 'boundary.json')))['elements'][0]
-segs = [[(p['lon'], p['lat']) for p in m['geometry']] for m in bd['members'] if m['type'] == 'way' and m.get('role') == 'outer' and 'geometry' in m]
-rings = []
-while segs:
-    ring = segs.pop(0)
-    changed = True
-    while changed and ring[0] != ring[-1]:
-        changed = False
-        for i, s in enumerate(segs):
-            if s[0] == ring[-1]: ring += s[1:]
-            elif s[-1] == ring[-1]: ring += s[::-1][1:]
-            elif s[-1] == ring[0]: ring = s[:-1] + ring
-            elif s[0] == ring[0]: ring = s[::-1][:-1] + ring
-            else: continue
-            segs.pop(i); changed = True; break
-    rings.append(ring)
+def join_rings(segs):
+    """Склеивает пути отношения в замкнутые кольца (по совпадающим концам)."""
+    segs = [list(s) for s in segs]
+    out = []
+    while segs:
+        ring = segs.pop(0)
+        changed = True
+        while changed and ring[0] != ring[-1]:
+            changed = False
+            for i, s in enumerate(segs):
+                if s[0] == ring[-1]: ring += s[1:]
+                elif s[-1] == ring[-1]: ring += s[::-1][1:]
+                elif s[-1] == ring[0]: ring = s[:-1] + ring
+                elif s[0] == ring[0]: ring = s[::-1][:-1] + ring
+                else: continue
+                segs.pop(i); changed = True; break
+        out.append(ring)
+    return out
+rings = join_rings([(p['lon'], p['lat']) for p in m['geometry']] for m in bd['members'] if m['type'] == 'way' and m.get('role') == 'outer' and 'geometry' in m)
 def inside(x, y):
     c = False
     for r in rings:
@@ -132,6 +136,33 @@ for e in B.values():
         addr = addr_inside(g)
         if addr: from_points += 1
     blds.append((S(addr), 1 if (t.get('building') in crit or t.get('amenity') in crit) else 0, pts, e))
+# Адреса из Visicom (© Візіком; collector/maps/visicom_fill.py) — только для домов без адреса в OSM. Флаг 8.
+visicom = 0
+vf = os.path.join(tiles, 'visicom.json')
+if os.path.exists(vf):
+    vc = json.load(open(vf))
+    for i, (si, fl, pts, e) in enumerate(blds):
+        a = vc.get(str(e['id']))
+        if si < 0 and a:
+            blds[i] = (S(a), fl | 8, pts, e); visicom += 1
+# Улицы, записанные в OSM/Visicom иначе, чем в списках облэнерго («Лахтинська» / «Лахтінська»): берём название
+# из списков, если это подтверждают номера домов (collector/maps/street_match.py). Иначе дом не найдётся в списках.
+renamed = 0
+zf0 = os.path.join(tiles, 'zoe.json')
+if os.path.exists(zf0):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from street_match import renames
+    z0 = json.load(open(zf0))
+    zs0 = {k: {h for hs in v['q'].values() for h in hs.split('|')} for k, v in z0.get('streets', {}).items()}
+    R = renames([strings[si] for si, fl, pts, e in blds if si >= 0], zs0, z0.get('aliases', {}),
+                {k: v.get('n', k) for k, v in z0.get('streets', {}).items()})
+    for i, (si, fl, pts, e) in enumerate(blds):
+        if si < 0: continue
+        st, _, hn = strings[si].rpartition(',')
+        k = R.get(st.strip())
+        if k:
+            blds[i] = (S(z0['streets'][k].get('n', k) + ',' + hn), fl, pts, e); renamed += 1
+    print(len(R), 'streets renamed to oblenergo names,', renamed, 'buildings')
 # Отметки жителей (подтверждённые 2+ установками): адрес дома, в котором стоит точка.
 # Пустой адрес заполняем всегда, адрес из OSM меняем, только если отметок 3 и больше.
 crowd = 0
@@ -187,6 +218,23 @@ if os.path.exists(zf):
     for i, (street, n) in interp.items():
         si, fl, pts, e = blds[i]
         blds[i] = (S(fix_addr(street) + ', ' + n), fl | 2, pts, e)
+# Очередь для своей базы адресов (сервер спрашивает Visicom, server/pins/src/visicom.js), если задан QUEUE_OUT.
+# prio 0 — без адреса и без оценки по соседям (их первыми), 1 — номер только оценён, 2 — гаражи, сараи и мелочь.
+NONRES = {'garage', 'garages', 'shed', 'industrial', 'warehouse', 'commercial', 'retail', 'service', 'roof', 'hut',
+          'kiosk', 'greenhouse', 'barn', 'transformer_tower', 'construction', 'ruins', 'carport', 'storage_tank'}
+if os.environ.get('QUEUE_OUT'):
+    queue = []
+    for si, fl, pts, e in blds:
+        if si >= 0 and not fl & 2: continue
+        g = e['geometry'][:-1] if e['geometry'][0] == e['geometry'][-1] else e['geometry']
+        if len(g) < 3: continue
+        m = [((p['lon'] - lon0) * kx, (p['lat'] - lat0) * ky) for p in g]
+        area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(m, m[1:] + m[:1]))) / 2
+        small = area < 40 or e.get('tags', {}).get('building') in NONRES
+        queue.append({'way': e['id'], 'prio': 2 if small else (1 if fl & 2 else 0),
+                      'ring': [[round(p['lon'], 7), round(p['lat'], 7)] for p in g]})
+    json.dump(queue, open(os.environ['QUEUE_OUT'], 'w'), separators=(',', ':'))
+    print(len(queue), 'in address queue:', {k: sum(1 for q in queue if q['prio'] == k) for k in (0, 1, 2)})
 blds = [(si, fl, pts) for si, fl, pts, e in blds]
 lines = []
 KIND = {'trunk':0,'primary':0,'secondary':1,'tertiary':2,'residential':3,'unclassified':3,'living_street':3,'pedestrian':4,'park':5,'water':6}
@@ -198,6 +246,69 @@ for e in L.values():
     if not any(inside(p['lon'], p['lat']) for p in g[::max(1, len(g)//4)]): continue
     pts = simplify([dm(p['lon'], p['lat']) for p in g], 15)
     if len(pts) >= 2: lines.append((KIND[k], S(t.get('name')), pts))
+# Большая вода из мультиполигонов (water.json): Днепр, водохранилища, каналы. Внешние кольца обрезаем по bbox карты,
+# острова (inner) вшиваем в контур своего внешнего кольца «мостиком» туда-обратно с обратным обходом:
+# при заливке по правилу non-zero они остаются дырами, и старым версиям приложения ничего менять не нужно.
+def clip(ring, x0, y0, x1, y1):
+    """Сазерленд-Ходжман по прямоугольнику; ring — список (x, y) без повтора первой точки."""
+    def cut(pts, inside_, cross):
+        res = []
+        for i, cur in enumerate(pts):
+            prev = pts[i - 1]
+            if inside_(cur):
+                if not inside_(prev): res.append(cross(prev, cur))
+                res.append(cur)
+            elif inside_(prev): res.append(cross(prev, cur))
+        return res
+    def at_x(x): return lambda a, b: (x, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]))
+    def at_y(y): return lambda a, b: (a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]), y)
+    for ins, cr in ((lambda p: p[0] >= x0, at_x(x0)), (lambda p: p[0] <= x1, at_x(x1)),
+                    (lambda p: p[1] >= y0, at_y(y0)), (lambda p: p[1] <= y1, at_y(y1))):
+        ring = cut(ring, ins, cr)
+        if not ring: break
+    return [(int(round(x)), int(round(y))) for x, y in ring]
+def area2(r): return sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(r, r[1:] + r[:1]))
+def in_ring(pt, r):
+    x, y = pt; c = False; j = len(r) - 1
+    for i in range(len(r)):
+        (xi, yi), (xj, yj) = r[i], r[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi: c = not c
+        j = i
+    return c
+wf = os.path.join(tiles, 'water.json')
+water_polys = 0
+if os.path.exists(wf):
+    xs = [x for r in rings for x, _ in r]; ys = [y for r in rings for _, y in r]
+    pad = 0.01
+    bx0, by0 = dm(min(xs) - pad, max(ys) + pad); bx1, by1 = dm(max(xs) + pad, min(ys) - pad)
+    for rel in json.load(open(wf)).get('elements', []):
+        if rel.get('type') != 'relation': continue
+        def ring_set(role):
+            out = []
+            for r in join_rings([(p['lon'], p['lat']) for p in m['geometry']] for m in rel['members']
+                                if m['type'] == 'way' and m.get('role', 'outer') == role and m.get('geometry')):
+                if len(r) < 4 or r[0] != r[-1]: continue  # незамкнутое кольцо (часть вне выгрузки) пропускаем
+                r = clip([dm(lon, lat) for lon, lat in r[:-1]], bx0, by0, bx1, by1)
+                if len(r) >= 3 and abs(area2(r)) > 2 * 400 * 100:  # меньше 400 м² не рисуем
+                    out.append(r)
+            return out
+        outers = ring_set('outer')
+        if not outers: continue
+        inners = ring_set('inner')
+        for o in outers:
+            if area2(o) < 0: o.reverse()
+            own = [r for r in inners if in_ring(r[0], o)]
+            pts = simplify(o + [o[0]], 15) if len(o) > 3 else o
+            for r in own:
+                if area2(r) > 0: r.reverse()
+                r = simplify(r + [r[0]], 15) if len(r) > 3 else r
+                if len(r) < 3: continue
+                # мостик от ближайшей вершины внешнего контура к острову и обратно
+                k = min(range(len(pts)), key=lambda i: (pts[i][0] - r[0][0]) ** 2 + (pts[i][1] - r[0][1]) ** 2)
+                pts = pts[:k + 1] + r + [r[0]] + pts[k:]
+            if len(pts) >= 3:
+                lines.append((KIND['water'], S(rel.get('tags', {}).get('name')), pts)); water_polys += 1
+print(water_polys, 'water polygons from relations')
 meta.update({'origin': [lat0, lon0], 'buildings': len(blds), 'lines': len(lines)})
 with open(out, 'wb') as f:
     m = json.dumps(meta, ensure_ascii=False).encode()
@@ -206,6 +317,12 @@ with open(out, 'wb') as f:
     for s in strings:
         b = s.encode(); f.write(struct.pack('>H', len(b))); f.write(b)
     def pts_out(pts):
+        # Шаг между точками хранится в short (±3,2 км в дм): длинные отрезки делим, чтобы не обрезать.
+        dense = [pts[0]]
+        for (a, b), (c, d) in zip(pts, pts[1:]):
+            n = int(max(abs(c - a), abs(d - b)) // 32000) + 1
+            dense += [(a + (c - a) * i // n, b + (d - b) * i // n) for i in range(1, n)] + [(c, d)]
+        pts = dense[:65535]
         f.write(struct.pack('>H', len(pts))); f.write(struct.pack('>ii', *pts[0]))
         for (a, b), (c, d) in zip(pts, pts[1:]):
             f.write(struct.pack('>hh', max(-32768, min(32767, c - a)), max(-32768, min(32767, d - b))))
@@ -215,4 +332,4 @@ with open(out, 'wb') as f:
     f.write(struct.pack('>i', len(lines)))
     for k, si, pts in lines:
         f.write(struct.pack('>bi', k, si)); pts_out(pts)
-print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(interp), 'interpolated;', crowd, 'from residents;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')
+print(from_points, 'addresses from points;', from_assoc, 'from associatedStreet;', len(interp), 'interpolated;', crowd, 'from residents;', visicom, 'from Visicom;', len(blds), 'buildings', sum(1 for b in blds if b[0] >= 0), 'with address', len(lines), 'lines', len(rings), 'rings', os.path.getsize(out), 'bytes')

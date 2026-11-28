@@ -1,5 +1,13 @@
 package ua.svetlo.monitor.ui.screens
 
+import androidx.compose.material.icons.rounded.Layers
+import ua.svetlo.monitor.data.VisicomTiles
+import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import ua.svetlo.monitor.data.tr
 import ua.svetlo.monitor.data.Visicom
 import ua.svetlo.monitor.data.Pins
@@ -394,6 +402,13 @@ fun CityMapScreen(
     var query by remember { mutableStateOf("") }
     val w = LocalWindow.current
     val c = Svetlo.colors
+    // Подложка Visicom (улицы, подписи, номера домов) — только в светлой теме: менять цвета их тайлов нельзя.
+    // Кнопка «слои»: житель может выключить подложку и смотреть нашу схему (выбор запоминаем).
+    var tilesWanted by remember { mutableStateOf(VisicomTiles.wanted(ctx)) }
+    val tilesOn = VisicomTiles.enabled && tilesWanted && !c.dark && city.hasOrigin
+    val tileTick by VisicomTiles.loaded.collectAsState()
+    LaunchedEffect(Unit) { VisicomTiles.trim(ctx) }
+    val density = LocalDensity.current.density
     val neutral = if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6)
     val critical = if (c.dark) Color(0xFF2A2D35) else Color(0xFFE6E3DA)
 
@@ -470,16 +485,36 @@ fun CityMapScreen(
                         }
                         val cx0 = kotlin.math.floor(left / CELL).toInt(); val cx1 = kotlin.math.floor(right / CELL).toInt()
                         val cy0 = kotlin.math.floor(top / CELL).toInt(); val cy1 = kotlin.math.floor(bottom / CELL).toInt()
+                        // Дома без известной очереди — часть «нашей» подложки: под тайлами Visicom их не видно.
                         for (cx in cx0..cx1) for (cy in cy0..cy1) {
                             index.pathsFor(cellKey(cx, cy), city)?.forEach { (k, p) ->
-                                drawPath(p, when (k) { "" -> neutral; "crit" -> critical; else -> keyColors[k] ?: neutral })
+                                if (k == "" || k == "crit" || !tilesOn) drawPath(p, when (k) { "" -> neutral; "crit" -> critical; else -> keyColors[k] ?: neutral })
+                            }
+                        }
+                    }
+                    if (tilesOn) {
+                        tileTick  // перерисовать, когда догрузился тайл
+                        drawVisicomTiles(ctx, city, center, z, wpx, hpx, left, top, right, bottom, density)
+                    }
+                    withTransform({
+                        translate(wpx / 2f, hpx / 2f); scale(z, z, Offset.Zero); translate(-center.x, -center.y)
+                    }) {
+                        val cx0 = kotlin.math.floor(left / CELL).toInt(); val cx1 = kotlin.math.floor(right / CELL).toInt()
+                        val cy0 = kotlin.math.floor(top / CELL).toInt(); val cy1 = kotlin.math.floor(bottom / CELL).toInt()
+                        // Поверх подложки Visicom — дома с известной очередью, полупрозрачно: номера домов Visicom видны.
+                        if (tilesOn) for (cx in cx0..cx1) for (cy in cy0..cy1) {
+                            index.pathsFor(cellKey(cx, cy), city)?.forEach { (k, p) ->
+                                if (k != "" && k != "crit") keyColors[k]?.let { col ->
+                                    drawPath(p, col, alpha = HouseAlpha)
+                                    drawPath(p, col, style = Stroke(1.6f / z, join = StrokeJoin.Round))
+                                }
                             }
                         }
                         // Мои дома — цветом своей очереди и с обводкой.
                         mine.forEach { (i, a) ->
                             val b = city.buildings[i]
                             val p = Path().apply { val n = b.points.size / 2; for (k in 0 until n) { if (k == 0) moveTo(b.points[0], b.points[1]) else lineTo(b.points[2 * k], b.points[2 * k + 1]) }; close() }
-                            drawPath(p, houseLook(repo, a.region, listOf(a.queue), now).first)
+                            drawPath(p, houseLook(repo, a.region, listOf(a.queue), now).first, alpha = if (tilesOn) HouseAlpha else 1f)
                             drawPath(p, c.ink, style = Stroke(2.4f / z))
                         }
                         picked?.let { i ->
@@ -536,13 +571,28 @@ fun CityMapScreen(
                     Box(Modifier.width(44.dp).height(1.dp).background(c.divider))
                     ZoomButton(Icons.Rounded.Remove, tr("Віддалити", "Отдалить")) { zoom = (zoom / 1.5f).coerceAtLeast(minZoom) }
                     Box(Modifier.width(44.dp).height(1.dp).background(c.divider))
+                    if (VisicomTiles.enabled && !c.dark) {
+                        ZoomButton(Icons.Rounded.Layers, if (tilesWanted) tr("Показати схему", "Показать схему") else tr("Показати мапу Візіком", "Показать карту Визиком"),
+                            tint = if (tilesWanted) c.accent else c.ink) {
+                            tilesWanted = !tilesWanted; VisicomTiles.setWanted(ctx, tilesWanted)
+                        }
+                        Box(Modifier.width(44.dp).height(1.dp).background(c.divider))
+                    }
                     ZoomButton(Icons.Rounded.Home, tr("Мій дім", "Мой дом"), tint = c.accent) {
                         mine.keys.firstOrNull()?.let { i -> val b = city.buildings[i]; center = Offset(b.cx, b.cy); picked = i }
                         scope.launch { zoomAnim.snapTo(0.92f); zoomAnim.animateTo(1f, spring(dampingRatio = 0.5f)) }
                     }
                 }
-                if (w.twoPane) MapLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 32.dp))
-                Text(tr("© учасники OpenStreetMap", "© участники OpenStreetMap"), style = Type.tiny, color = c.muted,
+                if (w.twoPane) MapLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 32.dp), repo.summary(city.region)?.mode)
+                val uri = LocalUriHandler.current
+                // Подпись Visicom (оферта п. 5.5) должна быть видна всегда: под строкой поиска, а не под карточкой дома.
+                if (tilesOn) {
+                    if (suggestions.isEmpty()) Text("${VisicomTiles.Attribution} · " + "контури © OpenStreetMap",
+                        style = Type.tiny, color = c.ink,
+                        modifier = Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 82.dp, end = 16.dp)
+                            .clip(RoundedCornerShape(6.dp)).background(c.surface.copy(alpha = 0.85f))
+                            .clickable { uri.openUri(VisicomTiles.Site) }.padding(horizontal = 6.dp, vertical = 2.dp))
+                } else Text(tr("© учасники OpenStreetMap · адреси © Візіком", "© участники OpenStreetMap · адреса © Визиком"), style = Type.tiny, color = c.muted,
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = if (!w.twoPane && picked != null) 8.dp else if (w.useRail) 12.dp else BottomBarSpace + 4.dp))
             }
             if (w.twoPane) {
@@ -561,7 +611,7 @@ fun CityMapScreen(
         if (!w.twoPane) {
             // imePadding: шторка поднимается над клавиатурой (окно edge-to-edge, само оно не сжимается).
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()) {
-                MapLegend(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).align(Alignment.CenterHorizontally))
+                MapLegend(Modifier.padding(horizontal = 16.dp, vertical = 10.dp).align(Alignment.CenterHorizontally), repo.summary(city.region)?.mode)
                 AnimatedVisibility(picked != null || pending != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                     Column(
                         Modifier.fillMaxWidth().widthIn(max = 640.dp)
@@ -779,15 +829,27 @@ private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier
     }
 }
 
+/** Легенда карты домов: цвета зависят от режима области (аварийные — красный вместо жёлтого). */
 @Composable
-private fun MapLegend(modifier: Modifier = Modifier) {
+private fun MapLegend(modifier: Modifier = Modifier, mode: ua.svetlo.monitor.data.RegionMode? = null) {
     val c = Svetlo.colors
-    FlowRow(
-        modifier.shadow(6.dp, CircleShape).clip(RoundedCornerShape(18.dp)).background(c.surface).padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+    val emergency = mode == ua.svetlo.monitor.data.RegionMode.Emergency
+    val blackout = mode == ua.svetlo.monitor.data.RegionMode.Blackout
+    Column(
+        modifier.widthIn(max = 360.dp).shadow(6.dp, RoundedCornerShape(18.dp)).clip(RoundedCornerShape(18.dp)).background(c.surface)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        LegendItem(Status.Green, tr("світло є", "свет есть")); LegendItem(Status.Yellow, tr("відключення", "отключение")); LegendItem(Status.Maybe, tr("частково", "частично"))
-        LegendItem(if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6), tr("черга невідома", "очередь неизвестна"))
+        if (emergency || blackout) {
+            Text(if (blackout) tr("Блекаут: графіки не діють", "Блэкаут: графики не действуют") else tr("Аварійні: графік може не діяти", "Аварийные: график может не действовать"),
+                style = Type.caption.copy(fontWeight = FontWeight.Bold), color = c.redInk, maxLines = 1)
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (!blackout) LegendItem(Status.Green, tr("світло є", "свет есть"))
+            LegendItem(if (emergency) Status.Red else if (blackout) Status.Black else Status.Yellow, tr("немає", "нет"))
+            if (!blackout) LegendItem(Status.Maybe, tr("частково", "частично"))
+            LegendItem(if (c.dark) Color(0xFF3A3E48) else Color(0xFFD3D0C6), tr("невідомо", "неизвестно"))
+        }
     }
 }
 
@@ -818,5 +880,44 @@ private fun FloatingSquare(icon: androidx.compose.ui.graphics.vector.ImageVector
 private fun ZoomButton(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, tint: Color = Svetlo.colors.ink, onClick: () -> Unit) {
     Box(Modifier.size(48.dp).clickable(onClickLabel = desc, onClick = onClick).semantics { contentDescription = desc }, contentAlignment = Alignment.Center) {
         Icon(icon, null, tint = tint)
+    }
+}
+
+/** Прозрачность заливки домов поверх подложки Visicom: цвет очереди виден, номера домов под ним читаются. */
+private const val HouseAlpha = 0.55f
+
+/**
+ * Тайлы Visicom в экранных координатах. Наша карта — в метрах от начала координат города (равнопромежуточная),
+ * тайлы — в веб-Меркаторе, поэтому углы каждого тайла пересчитываем через долготу/широту (внутри тайла разница < 1 пикселя).
+ * Пока тайл грузится, рисуем увеличенный кусок уже загруженного тайла уровнем выше.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVisicomTiles(
+    ctx: android.content.Context, city: CityMap, center: Offset, z: Float, wpx: Float, hpx: Float,
+    left: Float, top: Float, right: Float, bottom: Float, density: Float,
+) {
+    val tz = VisicomTiles.zoomFor(z, density, city.originLat)
+    val (lonL, latT) = city.toLonLat(left, top)
+    val (lonR, latB) = city.toLonLat(right, bottom)
+    val x0 = VisicomTiles.tileX(lonL, tz); val x1 = VisicomTiles.tileX(lonR, tz)
+    val y0 = VisicomTiles.tileY(latT, tz); val y1 = VisicomTiles.tileY(latB, tz)
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 80) return
+    fun scr(x: Int, y: Int): IntOffset {
+        val (mx, my) = city.fromLonLat(VisicomTiles.lon(x, tz), VisicomTiles.lat(y, tz))
+        return IntOffset((wpx / 2f + (mx - center.x) * z).roundToInt(), (hpx / 2f + (my - center.y) * z).roundToInt())
+    }
+    for (x in x0..x1) for (y in y0..y1) {
+        val a = scr(x, y); val b = scr(x + 1, y + 1)
+        val size = IntSize(b.x - a.x, b.y - a.y)
+        if (size.width <= 0 || size.height <= 0) continue
+        val img = VisicomTiles.get(ctx, tz, x, y)
+        if (img != null) { drawImage(img, dstOffset = a, dstSize = size, filterQuality = FilterQuality.Medium); continue }
+        for (up in 1..4) {
+            val pz = tz - up; if (pz < VisicomTiles.MinZ) break
+            val parent = VisicomTiles.cached(pz, x shr up, y shr up) ?: continue
+            val part = 256 shr up
+            drawImage(parent, srcOffset = IntOffset((x - ((x shr up) shl up)) * part, (y - ((y shr up) shl up)) * part),
+                srcSize = IntSize(part, part), dstOffset = a, dstSize = size, filterQuality = FilterQuality.Medium)
+            break
+        }
     }
 }

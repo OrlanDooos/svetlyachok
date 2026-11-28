@@ -2,10 +2,16 @@
 // GET  /confirmed?region=zaporizhia                              — дома, подтверждённые 2+ установками.
 // PUT  /data/v1/<файл>.json  — сборщик (GitHub Actions, вход по OIDC-токену GitHub) кладёт свежие графики.
 // GET  /data/v1/<файл>.json  — приложение читает их (кеш 20 с), без 5-минутной задержки raw.githubusercontent.
+// GET  /maps/v1/index.json, /maps/v1/<город>.bin — карты домов с адресами из нашей базы (кеш 1 ч).
+// PUT  /maps/v1/<файл> — сборка карт (GitHub Actions по OIDC или ADMIN_KEY). Эти карты НЕ кладём в публичный git:
+//      в них адреса © Візіком, их разрешено хранить только для работы приложения, без передачи третьим лицам.
+// GET/PUT /addr/v1/<область>.json — своя база адресов домов {osm way id: адрес} (только OIDC или ADMIN_KEY).
+// PUT /addr/v1/<область>/queue {items: [{way, ring, prio}]} — дома без адреса; cron спрашивает их у Visicom (visicom.js).
 // POST /feedback, /tg/*, /admin/*, cron — личный Telegram-бот владельца, см. telegram.js.
 // Наружу отдаём только адрес и усреднённую точку: id установок и хеши IP не публикуются.
 
 import { route as botRoute, scheduled as botScheduled } from "./telegram.js";
+import { fill as visicomFill } from "./visicom.js";
 
 const REGIONS = new Set(["zaporizhia"]);
 const MIN_CONFIRM = 2;          // столько разных установок должны отметить одно место
@@ -61,6 +67,10 @@ const REPO = "OrlanDooos/svetlyachok";
 const OIDC_ISS = "https://token.actions.githubusercontent.com";
 const OIDC_AUD = "svetlyachok-data";
 const DATA_PATH = /^\/data\/v1\/([a-z0-9-]+\.json)$/;
+const MAPS_PATH = /^\/maps\/v1\/([a-z0-9-]+\.(?:json|bin))$/;
+const ADDR_PATH = /^\/addr\/v1\/([a-z0-9-]+)(\.json|\/queue)$/;
+const CHUNK = 900_000;           // D1: строка не больше ~1 МБ, большие файлы режем на части
+const MAX_MAP = 20_000_000;
 let jwks = null, jwksAt = 0;
 
 const b64u = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), c => c.charCodeAt(0));
@@ -83,6 +93,31 @@ export async function verifyGithubOidc(token, now = Date.now() / 1000, fetchKeys
   return crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64u(parts[2]), new TextEncoder().encode(parts[0] + "." + parts[1]));
 }
 
+const bearer = req => (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+
+async function putBlob(env, path, body) {
+  const st = [env.DB.prepare("DELETE FROM blobs WHERE path=?1").bind(path)];
+  for (let i = 0, n = 0; i < body.length || n === 0; i += CHUNK, n++)
+    st.push(env.DB.prepare("INSERT INTO blobs (path, part, data) VALUES (?1, ?2, ?3)").bind(path, n, body.subarray(i, i + CHUNK)));
+  await env.DB.batch(st);
+}
+
+async function getMap(req, env, name) {
+  const cache = caches.default;
+  const hit = await cache.match(req.url);
+  if (hit) return hit;
+  const { results } = await env.DB.prepare("SELECT data FROM blobs WHERE path=?1 ORDER BY part").bind("maps/" + name).all();
+  if (!results.length) return json({ error: "not found" }, 404);
+  const parts = results.map(r => new Uint8Array(r.data));
+  const out = new Uint8Array(parts.reduce((a, p) => a + p.length, 0));
+  let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+  const res = new Response(out, { headers: {
+    "content-type": name.endsWith(".json") ? "application/json; charset=utf-8" : "application/octet-stream",
+    "access-control-allow-origin": "*", "cache-control": "public, max-age=" + (name.endsWith(".json") ? 300 : 3600) } });
+  await cache.put(req.url, res.clone());
+  return res;
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -101,6 +136,50 @@ export default {
       try { JSON.parse(body); } catch { return json({ error: "bad json" }, 400); }
       await env.DB.prepare("INSERT OR REPLACE INTO files (path, body, updated) VALUES (?1, ?2, ?3)").bind(dm[1], body, Math.floor(Date.now() / 1000)).run();
       return json({ ok: true });
+    }
+    const mm = url.pathname.match(MAPS_PATH);
+    if (mm && req.method === "GET") return getMap(req, env, mm[1]);
+    if (mm && req.method === "PUT") {
+      const t = bearer(req);
+      if (!((env.ADMIN_KEY && t === env.ADMIN_KEY) || (await verifyGithubOidc(t)))) return json({ error: "forbidden" }, 403);
+      const body = new Uint8Array(await req.arrayBuffer());
+      if (body.length > MAX_MAP) return json({ error: "too big" }, 413);
+      await putBlob(env, "maps/" + mm[1], body);
+      return json({ ok: true, bytes: body.length });
+    }
+    const am = url.pathname.match(ADDR_PATH);
+    if (am) {
+      const t = bearer(req);
+      if (!((env.ADMIN_KEY && t === env.ADMIN_KEY) || (await verifyGithubOidc(t)))) return json({ error: "forbidden" }, 403);
+      if (am[2] === "/queue") {
+        if (req.method !== "PUT") return json({ error: "method" }, 405);
+        let p; try { p = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+        const items = Array.isArray(p.items) ? p.items : [];
+        const st = env.DB.prepare("INSERT OR IGNORE INTO addr_queue (region, way, ring, prio) SELECT ?1, ?2, ?3, ?4 WHERE NOT EXISTS (SELECT 1 FROM addresses WHERE region=?1 AND way=?2)");
+        const rows = items.filter(i => Number.isInteger(i.way) && Array.isArray(i.ring) && i.ring.length >= 3 && i.ring.length < 2000)
+          .map(i => st.bind(am[1], i.way, JSON.stringify(i.ring), Number(i.prio) || 0));
+        for (let i = 0; i < rows.length; i += 500) await env.DB.batch(rows.slice(i, i + 500));
+        const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM addr_queue WHERE region=?1").bind(am[1]).first();
+        return json({ ok: true, queued: left.n });
+      }
+      if (req.method === "GET") {
+        const { results } = await env.DB.prepare("SELECT way, address, source FROM addresses WHERE region=?1").bind(am[1]).all();
+        const out = {};
+        for (const r of results) out[r.way] = r.address;
+        return new Response(JSON.stringify(out), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+      }
+      if (req.method === "PUT") {
+        // {source, items: {way id: адрес или ""}} — "" значит «источник адреса не знает», тоже запоминаем.
+        let p; try { p = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+        const src = String(p.source || "");
+        if (!/^[a-z]{2,20}$/.test(src) || typeof p.items !== "object") return json({ error: "bad body" }, 400);
+        const now = Math.floor(Date.now() / 1000);
+        const st = env.DB.prepare("INSERT OR REPLACE INTO addresses (region, way, address, source, updated) VALUES (?1, ?2, ?3, ?4, ?5)");
+        const rows = Object.entries(p.items).filter(([w, a]) => /^\d{1,15}$/.test(w) && typeof a === "string" && a.length < 200)
+          .map(([w, a]) => st.bind(am[1], Number(w), a.trim(), src, now));
+        for (let i = 0; i < rows.length; i += 500) await env.DB.batch(rows.slice(i, i + 500));
+        return json({ ok: true, saved: rows.length });
+      }
     }
     if (req.method === "POST" && url.pathname === "/pin") {
       let p; try { p = await req.json(); } catch { return json({ error: "bad json" }, 400); }
@@ -125,6 +204,7 @@ export default {
     return json({ error: "not found" }, 404);
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(botScheduled(env, env.PUBLIC_URL || "https://svetlyachok-pins.svetlyachok.workers.dev"));
+    if (event.cron === "*/10 * * * *") ctx.waitUntil(botScheduled(env, env.PUBLIC_URL || "https://svetlyachok-pins.svetlyachok.workers.dev"));
+    if (event.cron === "*/2 * * * *") ctx.waitUntil(visicomFill(env).then(r => r.done ? console.log("visicom", JSON.stringify(r)) : null, e => console.log("visicom error", String(e))));
   },
 };
