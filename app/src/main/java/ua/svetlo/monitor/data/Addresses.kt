@@ -96,6 +96,7 @@ class AddressIndex(
             s = s.replace(Regex("\\bп\\.?\\s*\\d.*$"), " ")
             s = s.replace(Regex("корп(ус)?\\.?\\s*"), "к")
             s = s.replace(Regex("\\s+"), "").replace('–', '-').replace('—', '-')
+            s = s.replace(Regex("(\\d)-([а-яіїєґ])$"), "$1$2")  // «34-А» = «34а»
             return s.trim('.', ',', ';')
         }
 
@@ -108,7 +109,7 @@ class AddressIndex(
                 names += k to st.getJSONObject(k).optString("n", k)
                 val q = st.getJSONObject(k).getJSONObject("q")
                 val houses = HashMap<String, String>()
-                q.keys().forEach { qs -> q.getString(qs).split('|').forEach { h -> if (h.isNotEmpty()) houses[h] = qs } }
+                q.keys().forEach { qs -> q.getString(qs).split('|').forEach { h -> if (h.isNotEmpty()) houses[normHouse(h)] = qs } }
                 streets[k] = houses
             }
             val al = o.optJSONObject("aliases")
